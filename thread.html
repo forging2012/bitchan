@@ -1,0 +1,69 @@
+<html lang="ja">
+	<head>
+		<meta charset="utf-8">
+		<title>{{.Title}}</title>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/6.0.0/normalize.min.css" integrity="sha256-VbcxqgMGQYm3q8qZMd63uETHXXZkqs7ME1bEvAY1xK8=" crossorigin="anonymous" />
+	<style>
+body {
+	background: rgb(239,239,239);
+}
+h1 {
+	color: rgb(255,0,0);
+	font-size: 18px;
+	font-weight: normal;
+}
+dd {
+	padding-bottom: 1em;
+}
+.post-name {
+	font-weight: bold;
+	color: #008000;
+}
+
+.bottom-nav {
+	margin-bottom: 2em;
+}
+	</style>
+	</head>
+	<body>
+		<a href="/">ビットちゃん</a>
+		<a href="/{{.BoardId}}/">■掲示板に戻る■</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/">全部読む</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/-100">1-</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
+		<hr>
+		<h1>{{.Title}}</h1>
+		<dl>
+			{{range .Posts}}
+			<dt>{{.Index}} :
+			{{if .Mail}}
+			<span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
+			{{else}}
+			<span class="post-name">{{.Name}}</span>
+			{{end}}
+			: {{.Timestamp | formatTimestamp}}</dt>
+			<dd>{{.Content}}</dd>
+			{{end}}
+		</dl>
+
+		<hr>
+		<div class="bottom-nav">
+		<a href="/{{.BoardId}}/">■掲示板に戻る■</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/">全部</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
+		</div>
+
+		<form method="POST" action="/test/bbs.cgi">
+			<input type="submit" value="書き込む" name="submit">
+			名前:
+			<input name="postName" size="19">
+			E-mail:
+			<input name="mail" size="19">
+			<br>
+			<textarea rows="5" cols="70" wrap="off" name="content"></textarea>
+			<input type="hidden" name="boardId" value="{{.BoardId}}">
+			<input type="hidden" name="threadHash" value="{{.Hash}}">
+		</form>
+		bitchan ver 0.1 <span class="post-name">peryaudo ★</span>
+	</body>
+</html>

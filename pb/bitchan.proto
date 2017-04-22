@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+message Block {
+	bytes previous_block_hash = 1;
+	bytes transactions_hash = 2;
+	uint64 timestamp = 3;
+	uint64 nonce = 4;
+	float difficulty = 5;
+}
+
+message Transactions {
+	repeated Transaction transactions = 1;
+}
+
+message Transaction {
+	repeated TransactionInput transaction_inputs = 1;
+	repeated TransactionOutput transaction_outputs = 2;
+	string board_identifier = 3;
+	bytes post_hash = 4;
+}
+
+message TransactionInput {
+	bytes previous_transaction_hash = 1;
+	int32 previous_transaction_index = 2;
+	bytes signature = 3;
+	bytes pubic_key = 4;
+}
+
+message TransactionOutput {
+	int64 amount = 1;
+	bytes public_key_hash = 2;
+}
+
+message Post {
+	string name = 1;
+	string mail = 2;
+	string content = 3;
+	uint64 timestamp = 4;
+
+	// Set only when the response is successive message in the thread.
+	bytes first_post_hash = 5;
+	bytes previous_post_hash = 6;
+
+	// Set only when the response is the first message in the thread.
+	string thread_title = 7;
+}

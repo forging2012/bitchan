@@ -1,0 +1,104 @@
+<html lang="ja">
+	<head>
+		<meta charset="utf-8">
+		<title>{{.BoardName}}</title>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/6.0.0/normalize.min.css" integrity="sha256-VbcxqgMGQYm3q8qZMd63uETHXXZkqs7ME1bEvAY1xK8=" crossorigin="anonymous" />
+	<style>
+body {
+	background-image: url("http://www2.2ch.net/ba.gif");
+}
+h1 {
+	font-size: 18px;
+	font-weight: bold;
+}
+h2 {
+	color: rgb(255,0,0);
+	font-size: 22px;
+	font-weight: bold;
+}
+dd {
+	padding-bottom: 1em;
+}
+.info {
+	background-color: #CCFFCC;
+	margin: 2em;
+	padding: 1em;
+	border: 1px solid #808080;
+}
+
+.info a {
+	font-size: 14px;
+}
+
+.thread {
+	background-color: #EFEFEF;
+	margin: 2em;
+	padding: 1em;
+	border: 1px solid #808080;
+}
+.post-name {
+	font-weight: bold;
+	color: #008000;
+}
+	</style>
+	</head>
+	<body>
+		<div class="info">
+			<h1>{{.BoardName}}</h1>
+		</div>
+		<div class="info">
+			{{range .Threads}}
+			<a href="#{{.Index}}">{{.Index}}: {{.Title}} ({{.Posts | len}})</a>
+			{{end}}
+		</div>
+		{{range .Threads}}
+		<div class="thread">
+		<h2><a name="{{.Index}}">{{.Title}}</a></h2>
+		<dl>
+			{{range .Posts}}
+			<dt>{{.Index}} :
+			{{if .Mail}}
+			<span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
+			{{else}}
+			<span class="post-name">{{.Name}}</span>
+			{{end}}
+			: {{.Timestamp | formatTimestamp}}</dt>
+			<dd>{{.Content}}</dd>
+			{{end}}
+		</dl>
+		<hr>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/">全部読む</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
+		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/-100">1-100</a>
+		<a href="#menu">板のトップ</a>
+		<a href="/{{.BoardId}}/">リロード</a>
+		<hr>
+		<form method="POST" action="/test/bbs.cgi">
+			<input type="submit" value="書き込む" name="submit">
+			名前:
+			<input name="postName" size="19">
+			E-mail:
+			<input name="mail" size="19">
+			<br>
+			<textarea rows="5" cols="70" wrap="off" name="content"></textarea>
+			<input type="hidden" name="boardId" value="{{.BoardId}}">
+			<input type="hidden" name="threadHash" value="{{.Hash}}">
+		</form>
+		</div>
+		{{end}}
+		<div class="info">
+			<form method="POST" action="/test/bbs.cgi">
+			タイトル: <input type="text" name="threadTitle" size="40">
+			<input type="submit" value="新規スレッド作成" name="submit"><br>
+			名前:
+			<input type="text" name="postName" size="19">
+			E-mail:
+			<input type="text" name="mail" size="19">
+			<br>
+			内容:
+			<textarea rows="5" cols="60" wrap="OFF" name="content"></textarea>
+			<input type="hidden" name="boardId" value="{{.Id}}">
+			</form>
+		</div>
+	</body>
+</html>
