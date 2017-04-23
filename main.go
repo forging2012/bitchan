@@ -133,7 +133,6 @@ func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *
 
 func (b *Blockchain) ListPostHashOfThread(boardId string, threadHash pb.TransactionHash) []pb.PostHash {
 	results := []pb.PostHash{}
-
 	currentHash := b.LastBlock
 L:
 	for {
@@ -144,6 +143,9 @@ L:
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
 			transaction := block.Transactions[i]
+			if transaction.BoardId != boardId {
+				continue
+			}
 			if !transaction.IsInThread(threadHash) {
 				continue
 			}
@@ -157,6 +159,7 @@ L:
 			}
 		}
 
+		// Genesis block.
 		if len(block.PreviousBlockHeaderHash) == 0 {
 			break
 		}
@@ -171,7 +174,63 @@ L:
 }
 
 func (b *Blockchain) ListPostHashOfBoard(boardId string) []pb.PostHash {
-	return []pb.PostHash{}
+	results := []pb.PostHash{}
+	currentHash := b.LastBlock
+	for {
+		block, ok := b.Blocks[currentHash]
+		if !ok {
+			log.Fatalln("invalid blockchain")
+		}
+
+		for i := len(block.Transactions) - 1; i >= 0; i-- {
+			transaction := block.Transactions[i]
+			if transaction.BoardId != boardId {
+				continue
+			}
+
+			var postHash pb.PostHash
+			copy(postHash[:], transaction.PostHash)
+			results = append(results, postHash)
+		}
+
+		// Genesis block.
+		if len(block.PreviousBlockHeaderHash) == 0 {
+			break
+		}
+		copy(currentHash[:], block.PreviousBlockHeaderHash)
+	}
+
+	return results
+}
+
+func (b *Blockchain) ListThreadHashOfBoard(boardId string) []pb.TransactionHash {
+	results := []pb.TransactionHash{}
+	currentHash := b.LastBlock
+	for {
+		block, ok := b.Blocks[currentHash]
+		if !ok {
+			log.Fatalln("invalid blockchain")
+		}
+
+		for i := len(block.Transactions) - 1; i >= 0; i-- {
+			transaction := block.Transactions[i]
+			if transaction.BoardId != boardId {
+				continue
+			}
+			if len(transaction.ThreadTransactionHash) > 0 {
+				continue
+			}
+
+			results = append(results, transaction.Hash())
+		}
+
+		// Genesis block.
+		if len(block.PreviousBlockHeaderHash) == 0 {
+			break
+		}
+		copy(currentHash[:], block.PreviousBlockHeaderHash)
+	}
+	return results
 }
 
 func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHash) (*Thread, error) {
@@ -218,11 +277,11 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 
 func (b *Blockchain) ConstructBoard(boardId string) (*Board, error) {
 	found := false
-	board := BoardListItem{}
+	boardMetadata := BoardListItem{}
 	for _, v := range boards {
 		if v.Id == boardId {
 			found = true
-			board = v
+			boardMetadata = v
 			break
 		}
 	}
@@ -230,25 +289,22 @@ func (b *Blockchain) ConstructBoard(boardId string) (*Board, error) {
 		return nil, errors.New("invalid board ID")
 	}
 
-	var threadHash pb.TransactionHash
-	hogeThread := Thread{
-		Index:   1,
-		BoardId: board.Id,
-		Hash:    hex.EncodeToString(threadHash[:]),
-		Title:   "ほげほげスレ",
-		Posts: []Post{
-			Post{Index: 1, Name: "名無しさん", Mail: "", Timestamp: 0, Content: "1got"},
-			Post{Index: 2, Name: "名無しさん", Mail: "sage", Timestamp: 0, Content: "糞スレsage"}}}
+	board := &Board{
+		Id: boardId,
+		BoardName: boardMetadata.Name,
+		Threads: []Thread{}}
 
-	hageThread := Thread{
-		Index:   2,
-		BoardId: board.Id,
-		Hash:    hex.EncodeToString(threadHash[:]),
-		Title:   "はげ",
-		Posts: []Post{
-			Post{Index: 1, Name: "名無しさん", Mail: "", Timestamp: 0, Content: "てますか？"}}}
+	threadHashes := b.ListThreadHashOfBoard(boardId)
+	for i, threadHash := range threadHashes {
+		thread, err := b.ConstructThread(boardId, threadHash)
+		if err != nil {
+			return nil, err
+		}
+		thread.Index = i + 1
+		board.Threads = append(board.Threads, *thread)
+	}
 
-	return &Board{Id: boardId, BoardName: board.Name, Threads: []Thread{hogeThread, hageThread}}, nil
+	return board, nil
 }
 
 var blockchain Blockchain
