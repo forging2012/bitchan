@@ -1,16 +1,19 @@
 package main
 
 import (
-	// "github.com/syndtr/goleveldb"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	// "google.golang.org/grpc"
 	"encoding/hex"
 	pb "github.com/peryaudo/bitchan/bitchan_pb"
+	"github.com/golang/protobuf/proto"
 	"html/template"
 	"log"
 	"net/http"
 	"regexp"
 	"time"
 	"errors"
+	"os"
 )
 
 const (
@@ -24,7 +27,6 @@ type BoardListItem struct {
 
 var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
 
-// - Write persistent part
 // - Write transaction part
 // - Write mining part
 // - Write simple unstructured network part
@@ -66,46 +68,170 @@ type PostCandidate struct {
 }
 
 type Blockchain struct {
-	Blocks    map[pb.BlockHash]*pb.Block
-	Posts     map[pb.PostHash]*pb.Post
 	LastBlock pb.BlockHash
+	DB	  *leveldb.DB
+}
+
+const (
+	BlockHeaderPrefix	= "BLKH"
+	BlockBodyPrefix		= "BLKB"
+	PostPrefix		= "POST"
+)
+
+func (b *Blockchain) Close() { b.DB.Close() }
+
+func (b *Blockchain) GetBlock(blockHash pb.BlockHash) (*pb.Block, error) {
+	block := &pb.Block{}
+	headerKey := append([]byte(BlockHeaderPrefix), blockHash[:]...)
+	data, err := b.DB.Get(headerKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	err = proto.Unmarshal(data, &block.BlockHeader)
+	if err != nil {
+		return nil, err
+	}
+	bodyKey := append([]byte(BlockBodyPrefix), block.BodyHash[:]...)
+	data, err = b.DB.Get(bodyKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	err = proto.Unmarshal(data, &block.BlockBody)
+	if err != nil {
+		return nil, err
+	}
+	return block, nil
+}
+
+func (b *Blockchain) PutBlock(block *pb.Block) error {
+	// TODO(tetsui): This func signature is not safe for malleability.
+	data, err := proto.Marshal(&block.BlockHeader)
+	if err != nil {
+		return err
+	}
+	bh := block.BlockHeader.Hash()
+	key := append([]byte(BlockHeaderPrefix), bh[:]...)
+	err = b.DB.Put(key, data, nil)
+	if err != nil {
+		return err
+	}
+
+	data, err = proto.Marshal(&block.BlockBody)
+	if err != nil {
+		return err
+	}
+	bb := block.BlockBody.Hash()
+	key = append([]byte(BlockBodyPrefix), bb[:]...)
+	err = b.DB.Put(key, data, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *Blockchain) GetPost(postHash pb.PostHash) (*pb.Post, error) {
+	key := append([]byte(PostPrefix), postHash[:]...)
+	data, err := b.DB.Get(key, nil)
+	if err != nil {
+		return nil, err
+	}
+	post := &pb.Post{}
+	err = proto.Unmarshal(data, post)
+	if err != nil {
+		return nil, err
+	}
+	return post, nil
+}
+
+func (b *Blockchain) PutPost(post *pb.Post) error {
+	// TODO(tetsui): This func signature is not safe for malleability.
+
+	data, err := proto.Marshal(post)
+	if err != nil {
+		return err
+	}
+	h := post.Hash()
+	key := append([]byte(PostPrefix), h[:]...)
+	err = b.DB.Put(key, data, nil)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (b *Blockchain) Init() {
-	b.Blocks = make(map[pb.BlockHash]*pb.Block)
-	b.Posts = make(map[pb.PostHash]*pb.Post)
+	_, err := os.Stat("bitchan.leveldb")
+	firstTime := err != nil
 
-	p1, t1, _ := b.CreatePost(&PostCandidate{
-		Name: "名無しさん",
-		Mail: "",
-		Content: "1got",
-		ThreadHash: pb.TransactionHash{},
-		ThreadTitle: "ほげほげスレ",
-		BoardId: "bitchan"})
-	p2, t2, _ := b.CreatePost(&PostCandidate{
-		Name: "名無しさん",
-		Mail: "sage",
-		Content: "糞スレsage",
-		ThreadHash: t1.Hash(),
-		ThreadTitle: "",
-		BoardId: "bitchan"})
-	p3, t3, _ := b.CreatePost(&PostCandidate{
-		Name: "名無しさん",
-		Mail: "",
-		Content: "てますか？",
-		ThreadHash: pb.TransactionHash{},
-		ThreadTitle: "はげ",
-		BoardId: "bitchan"})
-	b.Posts[p1.Hash()] = p1
-	b.Posts[p2.Hash()] = p2
-	b.Posts[p3.Hash()] = p3
+	b.DB, err = leveldb.OpenFile("bitchan.leveldb", nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
-	block := pb.Block{}
-	block.Transactions = []*pb.Transaction{t1, t2, t3}
-	block.UpdateBodyHash()
+	if firstTime {
+		p1, t1, _ := b.CreatePost(&PostCandidate{
+			Name: "名無しさん",
+			Mail: "",
+			Content: "1got",
+			ThreadHash: pb.TransactionHash{},
+			ThreadTitle: "ほげほげスレ",
+			BoardId: "bitchan"})
+		p2, t2, _ := b.CreatePost(&PostCandidate{
+			Name: "名無しさん",
+			Mail: "sage",
+			Content: "糞スレsage",
+			ThreadHash: t1.Hash(),
+			ThreadTitle: "",
+			BoardId: "bitchan"})
+		p3, t3, _ := b.CreatePost(&PostCandidate{
+			Name: "名無しさん",
+			Mail: "",
+			Content: "てますか？",
+			ThreadHash: pb.TransactionHash{},
+			ThreadTitle: "はげ",
+			BoardId: "bitchan"})
+		b.PutPost(p1)
+		b.PutPost(p2)
+		b.PutPost(p3)
 
-	b.Blocks[block.BlockHeader.Hash()] = &block
-	b.LastBlock = block.BlockHeader.Hash()
+		block := pb.Block{}
+		block.Transactions = []*pb.Transaction{t1, t2, t3}
+		block.UpdateBodyHash()
+
+		b.PutBlock(&block)
+	}
+
+
+	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockHeaderPrefix)), nil)
+	blockHashes := []pb.BlockHash{}
+	blockRef := make(map[pb.BlockHash]bool)
+	for iter.Next() {
+		_, v := iter.Key(), iter.Value()
+		blockHeader := &pb.BlockHeader{}
+		err = proto.Unmarshal(v, blockHeader)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		blockHashes = append(blockHashes, blockHeader.Hash())
+		if len(blockHeader.PreviousBlockHeaderHash) > 0 {
+			var blockHash pb.BlockHash
+			copy(blockHash[:], blockHeader.PreviousBlockHeaderHash)
+			blockRef[blockHash] = true
+		}
+	}
+	iter.Release()
+	if err := iter.Error(); err != nil {
+		log.Fatalln(err)
+	}
+
+	for _, blockHash := range blockHashes {
+		if !blockRef[blockHash] {
+			b.LastBlock = blockHash
+			break
+		}
+	}
+
+	log.Println("Current latest block is ", hex.EncodeToString(b.LastBlock[:]))
 }
 
 func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *pb.Transaction, err error) {
@@ -134,9 +260,9 @@ func (b *Blockchain) ListPostHashOfThread(boardId string, threadHash pb.Transact
 	currentHash := b.LastBlock
 L:
 	for {
-		block, ok := b.Blocks[currentHash]
-		if !ok {
-			log.Fatalln("invalid blockchain")
+		block, err := b.GetBlock(currentHash)
+		if err != nil {
+			log.Fatalln("invalid blockchain: ", err)
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -175,9 +301,9 @@ func (b *Blockchain) ListPostHashOfBoard(boardId string) []pb.PostHash {
 	results := []pb.PostHash{}
 	currentHash := b.LastBlock
 	for {
-		block, ok := b.Blocks[currentHash]
-		if !ok {
-			log.Fatalln("invalid blockchain")
+		block, err := b.GetBlock(currentHash)
+		if err != nil {
+			log.Fatalln("invalid blockchain: ", err)
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -205,9 +331,9 @@ func (b *Blockchain) ListThreadHashOfBoard(boardId string) []pb.TransactionHash 
 	results := []pb.TransactionHash{}
 	currentHash := b.LastBlock
 	for {
-		block, ok := b.Blocks[currentHash]
-		if !ok {
-			log.Fatalln("invalid blockchain")
+		block, err := b.GetBlock(currentHash)
+		if err != nil {
+			log.Fatalln("invalid blockchain: ", err)
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -248,7 +374,11 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 	postHashes := b.ListPostHashOfThread(boardId, threadHash)
 	posts := []*pb.Post{}
 	for _, postHash := range postHashes {
-		posts = append(posts, b.Posts[postHash])
+		post, err := b.GetPost(postHash)
+		if err != nil {
+			post = &pb.Post{}
+		}
+		posts = append(posts, post)
 	}
 	if len(posts) == 0 || posts[0].ThreadTitle == "" {
 		return nil, errors.New("invalid thread")
@@ -383,13 +513,13 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		blockchain.Posts[post.Hash()] = post
+		blockchain.PutPost(post)
 		block := pb.Block{}
 		block.Transactions = []*pb.Transaction{transaction}
 		block.UpdateBodyHash()
 		prevHash := blockchain.LastBlock
 		block.PreviousBlockHeaderHash = prevHash[:]
-		blockchain.Blocks[block.BlockHeader.Hash()] = &block
+		blockchain.PutBlock(&block)
 		blockchain.LastBlock = block.BlockHeader.Hash()
 
 		tmpl := template.Must(template.New("post.html").Funcs(funcMap).ParseFiles("post.html"))
@@ -401,6 +531,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	blockchain.Init()
+	defer blockchain.Close()
 
 	log.Println("Listen on 8080")
 	http.HandleFunc("/", httpHandler)
