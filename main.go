@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	// "google.golang.org/grpc"
+	"google.golang.org/grpc"
 	"encoding/hex"
 	pb "github.com/peryaudo/bitchan/bitchan_pb"
 	"github.com/golang/protobuf/proto"
@@ -14,10 +14,13 @@ import (
 	"time"
 	"errors"
 	"os"
+	"net"
 )
 
 const (
 	DefaultName = "名無しさん"
+	GatewayPort = ":8080"
+	ServentPort = ":8686"
 )
 
 type BoardListItem struct {
@@ -530,11 +533,40 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type BitchanServer struct{}
+
+func (s *BitchanServer) GetAddress(stream pb.Bitchan_GetAddressServer) error {
+	// peer.FromContext(stream.Context()).Addr
+	return nil
+}
+func (s *BitchanServer) GetBlock(stream pb.Bitchan_GetBlockServer) error {
+	return nil
+}
+func (s *BitchanServer) GetPost(stream pb.Bitchan_GetPostServer) error {
+	return nil
+}
+
+var bitchanServer BitchanServer
+
 func main() {
 	blockchain.Init()
 	defer blockchain.Close()
 
-	log.Println("Listen on 8080")
+	log.Printf("Listen on http://localhost%s/", ServentPort)
+	lis, err := net.Listen("tcp", ServentPort)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	s := grpc.NewServer()
+	pb.RegisterBitchanServer(s, &bitchanServer)
+	go func(){
+		if err := s.Serve(lis); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+
+	log.Printf("Gateway on http://localhost%s/", GatewayPort)
 	http.HandleFunc("/", httpHandler)
-	log.Fatalln(http.ListenAndServe(":8080", nil))
+	log.Fatalln(http.ListenAndServe(GatewayPort, nil))
 }

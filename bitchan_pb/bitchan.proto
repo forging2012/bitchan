@@ -1,9 +1,6 @@
 syntax = "proto3";
 package bitchan_pb;
 
-service Bitchan {
-}
-
 message BlockHeader {
 	bytes previous_block_header_hash = 1;
 	bytes body_hash = 2;
@@ -52,4 +49,41 @@ message Post {
 
 	// Set only when the post is the first message in the thread.
 	string thread_title = 6;
+}
+
+message AddressRequest {
+	string own_port = 1;
+}
+
+message AddressResponse {
+	repeated Address address = 1;
+}
+
+message Address {
+	string address = 1;
+	// 160 bit kademlia ID
+	bytes node_id = 2;
+}
+
+message BlockRequest {
+	bytes block_hash = 1;
+}
+
+message BlockResponse {
+	BlockHeader block_header = 1;
+	BlockBody block_body = 2;
+}
+
+message PostRequest {
+	bytes post_hash = 1;
+}
+
+message PostResponse {
+	Post post = 1;
+}
+
+service Bitchan {
+	rpc GetAddress (stream AddressRequest) returns (stream AddressResponse) {}
+	rpc GetBlock (stream BlockRequest) returns (stream BlockResponse) {}
+	rpc GetPost (stream PostRequest) returns (stream PostResponse) {}
 }
