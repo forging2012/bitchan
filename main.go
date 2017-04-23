@@ -495,7 +495,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var threadHash pb.TransactionHash
-		if len(threadHashSlice) != len(threadHash) {
+		if r.FormValue("threadTitle") == "" && len(threadHashSlice) != len(threadHash) {
 			http.Error(w, "invalid thread hash length", http.StatusInternalServerError)
 			return
 		}
@@ -532,6 +532,8 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 }
+
+// https://github.com/grpc/grpc-go/issues/484
 
 type BitchanServer struct{}
 
