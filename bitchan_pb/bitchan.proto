@@ -4,7 +4,7 @@ package bitchan_pb;
 message BlockHeader {
 	bytes previous_block_header_hash = 1;
 	bytes body_hash = 2;
-	uint64 timestamp = 3;
+	int64 timestamp = 3;
 	uint64 nonce = 4;
 	float difficulty = 5;
 }
@@ -16,7 +16,7 @@ message BlockBody {
 message Transaction {
 	repeated TransactionInput transaction_inputs = 1;
 	repeated TransactionOutput transaction_outputs = 2;
-	string board_identifier = 3;
+	string board_id = 3;
 	bytes post_hash = 4;
 
 	// Set only when the post is successive message in the thread.
@@ -39,7 +39,7 @@ message Post {
 	string name = 1;
 	string mail = 2;
 	string content = 3;
-	uint64 timestamp = 4;
+	int64 timestamp = 4;
 
 	// Set only when the post is successive message in the thread.
 	bytes previous_transaction_hash = 5;
