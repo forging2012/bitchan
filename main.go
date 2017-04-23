@@ -247,7 +247,8 @@ func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *
 	postHash := post.Hash()
 	transaction = &pb.Transaction{
 		BoardId: in.BoardId,
-		PostHash: postHash[:]}
+		PostHash: postHash[:],
+		Downvoted: in.Mail == "sage"}
 	if in.ThreadTitle == "" {
 		transaction.ThreadTransactionHash = in.ThreadHash[:]
 	}
