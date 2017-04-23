@@ -1,6 +1,9 @@
 syntax = "proto3";
 package bitchan_pb;
 
+service Bitchan {
+}
+
 message BlockHeader {
 	bytes previous_block_header_hash = 1;
 	bytes body_hash = 2;
@@ -21,6 +24,9 @@ message Transaction {
 
 	// Set only when the post is successive message in the thread.
 	bytes thread_transaction_hash = 5;
+
+	// "sage"
+	bool downvoted = 6;
 }
 
 message TransactionInput {

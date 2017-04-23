@@ -9,7 +9,7 @@ import (
 )
 
 type BlockHash [32]byte
-type BlockBodyHash [32]byte
+type BlockBodyHash [20]byte
 type TransactionHash [20]byte
 type PostHash [20]byte
 
@@ -42,7 +42,7 @@ func (bb *BlockBody) Hash() BlockBodyHash {
 	if err != nil {
 		log.Fatal("marshaling error:", err)
 	}
-	h := sha256.New()
+	h := ripemd160.New()
 	h.Write(data)
 	var res BlockBodyHash
 	copy(res[:], h.Sum(nil))
