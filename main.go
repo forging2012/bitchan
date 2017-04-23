@@ -13,6 +13,10 @@ import (
 	"errors"
 )
 
+const (
+	DefaultName = "名無しさん"
+)
+
 type BoardListItem struct {
 	Name string
 	Id   string	// Max 16 chars
@@ -20,8 +24,7 @@ type BoardListItem struct {
 
 var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
 
-// - Write converter from blockchain format to these view structs (top and read.cgi)
-// - Write bbs.cgi to generate blockchain format
+// - Write persistent part
 // - Write transaction part
 // - Write mining part
 // - Write simple unstructured network part
@@ -96,11 +99,6 @@ func (b *Blockchain) Init() {
 	b.Posts[p1.Hash()] = p1
 	b.Posts[p2.Hash()] = p2
 	b.Posts[p3.Hash()] = p3
-
-	ha := t1.Hash()
-	log.Println("thread 1: ", hex.EncodeToString(ha[:]))
-	ha = t3.Hash()
-	log.Println("thread 2: ", hex.EncodeToString(ha[:]))
 
 	block := pb.Block{}
 	block.Transactions = []*pb.Transaction{t1, t2, t3}
@@ -319,10 +317,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	threadMatch := regexp.MustCompile("^/test/read\\.cgi/([a-zA-Z0-9]+)/([a-fA-F0-9]+)/?").FindStringSubmatch(r.URL.Path)
 	boardMatch := regexp.MustCompile("^/([a-zA-Z0-9]+)/?$").FindStringSubmatch(r.URL.Path)
 
-	if r.URL.Path == "/" {
+	if r.Method =="GET" && r.URL.Path == "/" {
 		tmpl := template.Must(template.New("index.html").Funcs(funcMap).ParseFiles("index.html"))
 		tmpl.Execute(w, boards)
-	} else if len(boardMatch) == 2 {
+	} else if r.Method =="GET" && len(boardMatch) == 2 {
 		boardName := boardMatch[1]
 
 		board, err := blockchain.ConstructBoard(boardName)
@@ -333,7 +331,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		tmpl := template.Must(template.New("board.html").Funcs(funcMap).ParseFiles("board.html"))
 		tmpl.Execute(w, board)
-	} else if len(threadMatch) == 3 {
+	} else if r.Method =="GET" && len(threadMatch) == 3 {
 		boardName := threadMatch[1]
 		threadHashSlice, err := hex.DecodeString(threadMatch[2])
 		if err != nil {
@@ -356,8 +354,46 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		tmpl := template.Must(template.New("thread.html").Funcs(funcMap).ParseFiles("thread.html"))
 		tmpl.Execute(w, thread)
-	} else if r.URL.Path == "/test/bbs.cgi" {
-		http.Error(w, "Not Implemented", http.StatusInternalServerError)
+	} else if r.Method =="POST" && r.URL.Path == "/test/bbs.cgi" {
+		threadHashSlice, err := hex.DecodeString(r.FormValue("threadHash"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var threadHash pb.TransactionHash
+		if len(threadHashSlice) != len(threadHash) {
+			http.Error(w, "invalid thread hash length", http.StatusInternalServerError)
+			return
+		}
+		copy(threadHash[:], threadHashSlice)
+
+		candidate := &PostCandidate{
+			Name: r.FormValue("postName"),
+			Mail: r.FormValue("mail"),
+			Content: r.FormValue("content"),
+			ThreadHash: threadHash,
+			ThreadTitle: r.FormValue("threadTitle"),
+			BoardId: r.FormValue("boardId")}
+		if candidate.Name == "" {
+			candidate.Name = DefaultName
+		}
+		post, transaction, err := blockchain.CreatePost(candidate)
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		blockchain.Posts[post.Hash()] = post
+		block := pb.Block{}
+		block.Transactions = []*pb.Transaction{transaction}
+		block.UpdateBodyHash()
+		prevHash := blockchain.LastBlock
+		block.PreviousBlockHeaderHash = prevHash[:]
+		blockchain.Blocks[block.BlockHeader.Hash()] = &block
+		blockchain.LastBlock = block.BlockHeader.Hash()
+
+		tmpl := template.Must(template.New("post.html").Funcs(funcMap).ParseFiles("post.html"))
+		tmpl.Execute(w, map[string]string{"BoardId": r.FormValue("boardId")})
 	} else {
 		http.NotFound(w, r)
 	}
