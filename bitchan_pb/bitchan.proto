@@ -1,14 +1,15 @@
 syntax = "proto3";
+package bitchan_pb;
 
-message Block {
-	bytes previous_block_hash = 1;
-	bytes transactions_hash = 2;
+message BlockHeader {
+	bytes previous_block_header_hash = 1;
+	bytes body_hash = 2;
 	uint64 timestamp = 3;
 	uint64 nonce = 4;
 	float difficulty = 5;
 }
 
-message Transactions {
+message BlockBody {
 	repeated Transaction transactions = 1;
 }
 
@@ -17,6 +18,9 @@ message Transaction {
 	repeated TransactionOutput transaction_outputs = 2;
 	string board_identifier = 3;
 	bytes post_hash = 4;
+
+	// Set only when the post is successive message in the thread.
+	bytes thread_transaction_hash = 5;
 }
 
 message TransactionInput {
@@ -37,10 +41,9 @@ message Post {
 	string content = 3;
 	uint64 timestamp = 4;
 
-	// Set only when the response is successive message in the thread.
-	bytes first_post_hash = 5;
-	bytes previous_post_hash = 6;
+	// Set only when the post is successive message in the thread.
+	bytes previous_transaction_hash = 5;
 
-	// Set only when the response is the first message in the thread.
-	string thread_title = 7;
+	// Set only when the post is the first message in the thread.
+	string thread_title = 6;
 }
