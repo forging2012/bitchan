@@ -15,13 +15,14 @@ import (
 	"os"
 	"net"
 	"encoding/binary"
+	"flag"
+	"strings"
 )
 
-const (
-	DefaultName = "名無しさん"
-	GatewayPort = ":8080"
-	ServentPort = ":8686"
-)
+var defaultName = flag.String("defaultName", "名無しさん", "")
+var gatewayPort = flag.String("gatewayPort", ":8080", "")
+var serventPort = flag.String("serventPort", ":8686", "")
+var initNodes = flag.String("initNodes", "", "")
 
 type BoardListItem struct {
 	Name string
@@ -530,7 +531,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			ThreadTitle: r.FormValue("threadTitle"),
 			BoardId: r.FormValue("boardId")}
 		if candidate.Name == "" {
-			candidate.Name = DefaultName
+			candidate.Name = *defaultName
 		}
 		post, transaction, err := blockchain.CreatePost(candidate)
 
@@ -554,7 +555,75 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
+type Servent struct {
+	Nodes []pb.Node
+}
+
+func (s *Servent) RegularlyPing() {
+	s.Nodes = []pb.Node{}
+	for _, initNode := range strings.Split(*initNodes, ",") {
+		if len(initNode) > 0 {
+			s.Nodes = append(s.Nodes, pb.Node{
+				Address: initNode})
+		}
+	}
+
+	for {
+		for _, node := range s.Nodes {
+			msg := pb.BitchanMessage{IsPing: true}
+			err := s.SendBitchanMessage(node.Address, &msg)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			time.Sleep(time.Second)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func (s *Servent) Run() {
+	go s.RegularlyPing()
+
+	localAddr, err := net.ResolveUDPAddr("udp", *serventPort)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	conn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	buf := make([]byte, 1024 * 1024)
+
+	// TODO(tetsui): do not fatalln
+	for {
+		n, addr, err := conn.ReadFromUDP(buf)
+		addr = addr
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if n < 8 {
+			log.Fatalln("invalid length ", n)
+		}
+		expected_len := binary.LittleEndian.Uint32(buf[0:4])
+		expected_hash := buf[4:8]
+		if n != int(expected_len) + 8 {
+			log.Fatalln("invalid length ", n, " vs ", expected_len + 8)
+		}
+		content := buf[8:8+expected_len]
+		// TODO(tetsui): verify hash
+		expected_hash = expected_hash
+
+		var msg pb.BitchanMessage
+		err = proto.Unmarshal(content, &msg)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		log.Println(msg.String())
+	}
+}
+
+func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
 	remoteAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		return err
@@ -571,14 +640,14 @@ func SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
 		return err
 	}
 
-	var data_len [4]byte
-	binary.LittleEndian.PutUint32(data_len[:], uint32(len(data)))
-	var data_hash [4]byte
+	var dataLen [4]byte
+	binary.LittleEndian.PutUint32(dataLen[:], uint32(len(data)))
+	var dataHash [4]byte
 	// TODO(tetsui)
 
 	buf := []byte{}
-	buf = append(buf, data_len[:]...)
-	buf = append(buf, data_hash[:]...)
+	buf = append(buf, dataLen[:]...)
+	buf = append(buf, dataHash[:]...)
 	buf = append(buf, data...)
 
 	_, err = conn.Write(buf)
@@ -588,48 +657,18 @@ func SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
 	return nil
 }
 
-func RunServent() {
-	localAddr, err := net.ResolveUDPAddr("udp", ServentPort)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	conn, err := net.ListenUDP("udp", localAddr)
-	if err != nil {
-		log.Fatalln(err)
-	}
 
-	buf := make([]byte, 1024 * 1024)
-
-	for {
-		n, addr, err := conn.ReadFromUDP(buf)
-		addr = addr
-		if err != nil {
-			log.Fatalln(err)
-		}
-		if n < 8 {
-			log.Fatalln("invalid length")
-		}
-		expected_len := binary.LittleEndian.Uint32(buf[0:4])
-		expected_hash := buf[4:8]
-		if n + 8 != int(expected_len) {
-			log.Fatalln("invalid length")
-		}
-		content := buf[8:8+expected_len]
-		// TODO(tetsui): verify hash
-		expected_hash = expected_hash
-
-		var msg pb.BitchanMessage
-		proto.Unmarshal(content, &msg)
-	}
-}
 
 func main() {
+	flag.Parse()
+
 	blockchain.Init()
 	defer blockchain.Close()
 
-	go RunServent()
+	var servent Servent
+	go servent.Run()
 
-	log.Printf("Gateway on http://localhost%s/", GatewayPort)
+	log.Printf("Gateway on http://localhost%s/", *gatewayPort)
 	http.HandleFunc("/", httpHandler)
-	log.Fatalln(http.ListenAndServe(GatewayPort, nil))
+	log.Fatalln(http.ListenAndServe(*gatewayPort, nil))
 }

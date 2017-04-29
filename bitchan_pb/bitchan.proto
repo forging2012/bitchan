@@ -71,6 +71,9 @@ message BitchanMessage {
 
 	// inv of Bitcoin
 	repeated NotifiedHash notified_hashes = 6;
+
+	// If set, needs pong.
+	bool is_ping = 7;
 }
 
 message NotifiedHash {
