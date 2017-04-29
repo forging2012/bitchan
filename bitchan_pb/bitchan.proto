@@ -51,39 +51,47 @@ message Post {
 	string thread_title = 6;
 }
 
-message AddressRequest {
-	string own_port = 1;
+// Kademlia inspired.
+// https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf
+// http://www.bittorrent.org/beps/bep_0005.html
+message BitchanMessage {
+	bytes own_node_id = 1;
+
+	// FIND_NODE or FIND_VALUE targed identifier.
+	bytes target_id = 2;
+
+	// Return stored_value instead of nodes. (FIND_VALUE)
+	bool find_value = 3;
+
+	// Response for FIND_NODE or FIND_VALUE
+	repeated bytes nodes = 4;
+
+	// STORE
+	StoredValue stored_value = 5;
+
+	// inv of Bitcoin
+	repeated NotifiedHash notified_hashes = 6;
 }
 
-message AddressResponse {
-	repeated Address address = 1;
+message NotifiedHash {
+	DataType data_type = 1;
+	bytes hash = 2;
 }
 
-message Address {
+message Node {
 	string address = 1;
 	// 160 bit kademlia ID
 	bytes node_id = 2;
 }
 
-message BlockRequest {
-	bytes block_hash = 1;
-}
+enum DataType {
+	BLOCK_HEADER = 0;
+	BLOCK_BODY   = 1;
+	TRANSACTION  = 2;
+	POST         = 3;
+};
 
-message BlockResponse {
-	BlockHeader block_header = 1;
-	BlockBody block_body = 2;
-}
-
-message PostRequest {
-	bytes post_hash = 1;
-}
-
-message PostResponse {
-	Post post = 1;
-}
-
-service Bitchan {
-	rpc GetAddress (stream AddressRequest) returns (stream AddressResponse) {}
-	rpc GetBlock (stream BlockRequest) returns (stream BlockResponse) {}
-	rpc GetPost (stream PostRequest) returns (stream PostResponse) {}
+message StoredValue {
+	bytes data = 1;
+	DataType data_type = 2;
 }
