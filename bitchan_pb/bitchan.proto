@@ -10,7 +10,7 @@ message BlockHeader {
 }
 
 message BlockBody {
-	repeated Transaction transactions = 1;
+	repeated bytes transaction_hashes = 1;
 }
 
 message Transaction {

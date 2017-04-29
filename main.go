@@ -78,6 +78,7 @@ type Blockchain struct {
 const (
 	BlockHeaderPrefix	= "BLKH"
 	BlockBodyPrefix		= "BLKB"
+	TransactionPrefix	= "TRAN"
 	PostPrefix		= "POST"
 )
 
@@ -102,6 +103,16 @@ func (b *Blockchain) GetBlock(blockHash pb.BlockHash) (*pb.Block, error) {
 	err = proto.Unmarshal(data, &block.BlockBody)
 	if err != nil {
 		return nil, err
+	}
+	for _, transactionHash := range block.TransactionHashes {
+		transactionKey := append([]byte(TransactionPrefix), transactionHash...)
+		data, err = b.DB.Get(transactionKey, nil)
+		if err != nil {
+			return nil, err
+		}
+		var transaction pb.Transaction
+		err = proto.Unmarshal(data, &transaction)
+		block.Transactions = append(block.Transactions, &transaction)
 	}
 	return block, nil
 }
@@ -128,6 +139,16 @@ func (b *Blockchain) PutBlock(block *pb.Block) error {
 	err = b.DB.Put(key, data, nil)
 	if err != nil {
 		return err
+	}
+
+	for _, transaction := range block.Transactions {
+		data, err = proto.Marshal(transaction)
+		if err != nil {
+			return err
+		}
+		th := transaction.Hash()
+		key = append([]byte(TransactionPrefix), th[:]...)
+		err = b.DB.Put(key, data, nil)
 	}
 	return nil
 }
