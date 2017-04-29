@@ -56,24 +56,25 @@ message Post {
 // http://www.bittorrent.org/beps/bep_0005.html
 message BitchanMessage {
 	bytes own_node_id = 1;
+	int32 own_port = 2;
 
 	// FIND_NODE or FIND_VALUE targed identifier.
-	bytes target_id = 2;
+	bytes target_id = 3;
 
 	// Return stored_value instead of nodes. (FIND_VALUE)
-	bool find_value = 3;
+	bool find_value = 4;
 
 	// Response for FIND_NODE or FIND_VALUE
-	repeated bytes nodes = 4;
+	repeated bytes nodes = 5;
 
 	// STORE
-	StoredValue stored_value = 5;
+	StoredValue stored_value = 6;
 
 	// inv of Bitcoin
-	repeated NotifiedHash notified_hashes = 6;
+	repeated NotifiedHash notified_hashes = 7;
 
 	// If set, needs pong.
-	bool is_ping = 7;
+	bool is_ping = 8;
 }
 
 message NotifiedHash {

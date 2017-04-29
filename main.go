@@ -1,32 +1,34 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"flag"
+	"fmt"
+	"github.com/golang/protobuf/proto"
+	pb "github.com/peryaudo/bitchan/bitchan_pb"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	"encoding/hex"
-	pb "github.com/peryaudo/bitchan/bitchan_pb"
-	"github.com/golang/protobuf/proto"
 	"html/template"
 	"log"
-	"net/http"
-	"regexp"
-	"time"
-	"errors"
-	"os"
 	"net"
-	"encoding/binary"
-	"flag"
+	"net/http"
+	"os"
+	"regexp"
 	"strings"
+	"time"
 )
 
 var defaultName = flag.String("defaultName", "名無しさん", "")
-var gatewayPort = flag.String("gatewayPort", ":8080", "")
-var serventPort = flag.String("serventPort", ":8686", "")
+var gatewayPort = flag.Int("gatewayPort", 8080, "")
+var serventPort = flag.Int("serventPort", 8686, "")
 var initNodes = flag.String("initNodes", "", "")
+var dhtBucketSize = flag.Int("dhtBucketSize", 20, "Size of k-bucket in Kademlia DHT.")
 
 type BoardListItem struct {
 	Name string
-	Id   string	// Max 16 chars
+	Id   string // Max 16 chars
 }
 
 var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
@@ -63,24 +65,24 @@ type Post struct {
 }
 
 type PostCandidate struct {
-	Name string
-	Mail string
-	Content string
-	ThreadHash pb.TransactionHash
+	Name        string
+	Mail        string
+	Content     string
+	ThreadHash  pb.TransactionHash
 	ThreadTitle string
-	BoardId string
+	BoardId     string
 }
 
 type Blockchain struct {
 	LastBlock pb.BlockHash
-	DB	  *leveldb.DB
+	DB        *leveldb.DB
 }
 
 const (
-	BlockHeaderPrefix	= "BLKH"
-	BlockBodyPrefix		= "BLKB"
-	TransactionPrefix	= "TRAN"
-	PostPrefix		= "POST"
+	BlockHeaderPrefix = "BLKH"
+	BlockBodyPrefix   = "BLKB"
+	TransactionPrefix = "TRAN"
+	PostPrefix        = "POST"
 )
 
 func (b *Blockchain) Close() { b.DB.Close() }
@@ -195,26 +197,26 @@ func (b *Blockchain) Init() {
 
 	if firstTime {
 		p1, t1, _ := b.CreatePost(&PostCandidate{
-			Name: "名無しさん",
-			Mail: "",
-			Content: "1got",
-			ThreadHash: pb.TransactionHash{},
+			Name:        "名無しさん",
+			Mail:        "",
+			Content:     "1got",
+			ThreadHash:  pb.TransactionHash{},
 			ThreadTitle: "ほげほげスレ",
-			BoardId: "bitchan"})
+			BoardId:     "bitchan"})
 		p2, t2, _ := b.CreatePost(&PostCandidate{
-			Name: "名無しさん",
-			Mail: "sage",
-			Content: "糞スレsage",
-			ThreadHash: t1.Hash(),
+			Name:        "名無しさん",
+			Mail:        "sage",
+			Content:     "糞スレsage",
+			ThreadHash:  t1.Hash(),
 			ThreadTitle: "",
-			BoardId: "bitchan"})
+			BoardId:     "bitchan"})
 		p3, t3, _ := b.CreatePost(&PostCandidate{
-			Name: "名無しさん",
-			Mail: "",
-			Content: "てますか？",
-			ThreadHash: pb.TransactionHash{},
+			Name:        "名無しさん",
+			Mail:        "",
+			Content:     "てますか？",
+			ThreadHash:  pb.TransactionHash{},
 			ThreadTitle: "はげ",
-			BoardId: "bitchan"})
+			BoardId:     "bitchan"})
 		b.PutPost(p1)
 		b.PutPost(p2)
 		b.PutPost(p3)
@@ -225,7 +227,6 @@ func (b *Blockchain) Init() {
 
 		b.PutBlock(&block)
 	}
-
 
 	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockHeaderPrefix)), nil)
 	blockHashes := []pb.BlockHash{}
@@ -261,9 +262,9 @@ func (b *Blockchain) Init() {
 
 func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *pb.Transaction, err error) {
 	post = &pb.Post{
-		Name: in.Name,
-		Mail: in.Mail,
-		Content: in.Content,
+		Name:      in.Name,
+		Mail:      in.Mail,
+		Content:   in.Content,
 		Timestamp: time.Now().Unix()}
 	if in.ThreadTitle != "" {
 		post.ThreadTitle = in.ThreadTitle
@@ -271,8 +272,8 @@ func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *
 
 	postHash := post.Hash()
 	transaction = &pb.Transaction{
-		BoardId: in.BoardId,
-		PostHash: postHash[:],
+		BoardId:   in.BoardId,
+		PostHash:  postHash[:],
 		Downvoted: in.Mail == "sage"}
 	if in.ThreadTitle == "" {
 		transaction.ThreadTransactionHash = in.ThreadHash[:]
@@ -411,19 +412,19 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 	}
 
 	thread := &Thread{
-		Index: 1,
+		Index:   1,
 		BoardId: board.Id,
-		Hash: hex.EncodeToString(threadHash[:]),
-		Title: posts[0].ThreadTitle,
-		Posts: []Post{}}
-	
+		Hash:    hex.EncodeToString(threadHash[:]),
+		Title:   posts[0].ThreadTitle,
+		Posts:   []Post{}}
+
 	for i, post := range posts {
 		thread.Posts = append(thread.Posts, Post{
-			Index: i + 1,
-			Name: post.Name,
-			Mail: post.Mail,
+			Index:     i + 1,
+			Name:      post.Name,
+			Mail:      post.Mail,
 			Timestamp: post.Timestamp,
-			Content: post.Content})
+			Content:   post.Content})
 	}
 
 	return thread, nil
@@ -444,9 +445,9 @@ func (b *Blockchain) ConstructBoard(boardId string) (*Board, error) {
 	}
 
 	board := &Board{
-		Id: boardId,
+		Id:        boardId,
 		BoardName: boardMetadata.Name,
-		Threads: []Thread{}}
+		Threads:   []Thread{}}
 
 	threadHashes := b.ListThreadHashOfBoard(boardId)
 	for i, threadHash := range threadHashes {
@@ -473,10 +474,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	threadMatch := regexp.MustCompile("^/test/read\\.cgi/([a-zA-Z0-9]+)/([a-fA-F0-9]+)/?").FindStringSubmatch(r.URL.Path)
 	boardMatch := regexp.MustCompile("^/([a-zA-Z0-9]+)/?$").FindStringSubmatch(r.URL.Path)
 
-	if r.Method =="GET" && r.URL.Path == "/" {
+	if r.Method == "GET" && r.URL.Path == "/" {
 		tmpl := template.Must(template.New("index.html").Funcs(funcMap).ParseFiles("index.html"))
 		tmpl.Execute(w, boards)
-	} else if r.Method =="GET" && len(boardMatch) == 2 {
+	} else if r.Method == "GET" && len(boardMatch) == 2 {
 		boardName := boardMatch[1]
 
 		board, err := blockchain.ConstructBoard(boardName)
@@ -487,7 +488,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		tmpl := template.Must(template.New("board.html").Funcs(funcMap).ParseFiles("board.html"))
 		tmpl.Execute(w, board)
-	} else if r.Method =="GET" && len(threadMatch) == 3 {
+	} else if r.Method == "GET" && len(threadMatch) == 3 {
 		boardName := threadMatch[1]
 		threadHashSlice, err := hex.DecodeString(threadMatch[2])
 		if err != nil {
@@ -510,7 +511,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		tmpl := template.Must(template.New("thread.html").Funcs(funcMap).ParseFiles("thread.html"))
 		tmpl.Execute(w, thread)
-	} else if r.Method =="POST" && r.URL.Path == "/test/bbs.cgi" {
+	} else if r.Method == "POST" && r.URL.Path == "/test/bbs.cgi" {
 		threadHashSlice, err := hex.DecodeString(r.FormValue("threadHash"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -524,12 +525,12 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		copy(threadHash[:], threadHashSlice)
 
 		candidate := &PostCandidate{
-			Name: r.FormValue("postName"),
-			Mail: r.FormValue("mail"),
-			Content: r.FormValue("content"),
-			ThreadHash: threadHash,
+			Name:        r.FormValue("postName"),
+			Mail:        r.FormValue("mail"),
+			Content:     r.FormValue("content"),
+			ThreadHash:  threadHash,
 			ThreadTitle: r.FormValue("threadTitle"),
-			BoardId: r.FormValue("boardId")}
+			BoardId:     r.FormValue("boardId")}
 		if candidate.Name == "" {
 			candidate.Name = *defaultName
 		}
@@ -557,6 +558,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 type Servent struct {
 	Nodes []pb.Node
+	NodeId []byte
 }
 
 func (s *Servent) RegularlyPing() {
@@ -584,7 +586,9 @@ func (s *Servent) RegularlyPing() {
 func (s *Servent) Run() {
 	go s.RegularlyPing()
 
-	localAddr, err := net.ResolveUDPAddr("udp", *serventPort)
+	log.Printf("Servent on localhost:%d", *serventPort)
+	// TODO(tetsui): Reuse connection.
+	localAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", *serventPort))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -593,7 +597,7 @@ func (s *Servent) Run() {
 		log.Fatalln(err)
 	}
 
-	buf := make([]byte, 1024 * 1024)
+	buf := make([]byte, 1024*1024)
 
 	// TODO(tetsui): do not fatalln
 	for {
@@ -607,10 +611,10 @@ func (s *Servent) Run() {
 		}
 		expected_len := binary.LittleEndian.Uint32(buf[0:4])
 		expected_hash := buf[4:8]
-		if n != int(expected_len) + 8 {
-			log.Fatalln("invalid length ", n, " vs ", expected_len + 8)
+		if n != int(expected_len)+8 {
+			log.Fatalln("invalid length ", n, " vs ", expected_len+8)
 		}
-		content := buf[8:8+expected_len]
+		content := buf[8 : 8+expected_len]
 		// TODO(tetsui): verify hash
 		expected_hash = expected_hash
 
@@ -619,11 +623,64 @@ func (s *Servent) Run() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		log.Println(msg.String())
+		log.Println(addr.String(), "says", msg.String())
+		remoteAddr := fmt.Sprintf("%s:%d", addr.IP.String(), msg.OwnPort)
+
+		// FIND_NODE or FIND_VALUE requested.
+		if len(msg.TargetId) > 0 {
+			replyMsg := &pb.BitchanMessage{}
+			if msg.FindValue && blockchain.HasData(msg.TargedId) {
+				replyMsg.StoredValue = blockchain.GetData(msg.TargetId)
+			} else {
+				replyMsg.Nodes = s.PickFromKBuckets(msg.TargetId)
+			}
+			s.SendBitchanMessage(remoteAddr, replyMsg)
+		}
+
+		// FIND_NODE or FIND_VALUE responded.
+		if len(msg.Nodes) > 0 {
+			// TODO(tetsui): Store to k-bucket
+			s.StoreToKBuckets(msg.Nodes)
+		}
+
+		// STORE_VALUE
+		if msg.StoredValue != nil {
+			blockchain.PutData(msg.StoredValue)
+		}
+		
+		// inv of Bitcoin
+		for _, notifiedHash := range msg.NotifiedHashes {
+			if !blockchain.HasData(notifiedHash.hash) {
+				replyMsg := &pb.BitchanMessage{
+					TargetId: notifiedHash.hash}
+				replyMsg := &pb.BitchanMessage{}
+				s.SendBitchanMessage(remoteAddr, replyMsg)
+			}
+		}
+
+		// When that is ping, then pong.
+		if msg.IsPing {
+			replyMsg := &pb.BitchanMessage{}
+			s.SendBitchanMessage(remoteAddr, replyMsg)
+		}
+
+		// TODO(tetsui): 
+		addrFound := false
+		for i := 0; i < len(s.Nodes); i++ {
+			if s.Nodes[i].Address == remoteAddr {
+				s.Nodes[i].NodeId = msg.OwnNodeId
+				addrFound = true
+			}
+		}
+		if !addrFound {
+			s.Nodes = append(s.Nodes, pb.Node{Address: remoteAddr, NodeId: msg.OwnNodeId})
+		}
 	}
 }
 
 func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
+	msg.OwnPort = int32(*serventPort)
+
 	remoteAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		return err
@@ -657,8 +714,6 @@ func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) err
 	return nil
 }
 
-
-
 func main() {
 	flag.Parse()
 
@@ -668,7 +723,7 @@ func main() {
 	var servent Servent
 	go servent.Run()
 
-	log.Printf("Gateway on http://localhost%s/", *gatewayPort)
+	log.Printf("Gateway on http://localhost:%d/", *gatewayPort)
 	http.HandleFunc("/", httpHandler)
-	log.Fatalln(http.ListenAndServe(*gatewayPort, nil))
+	log.Fatalln(http.ListenAndServe(fmt.Sprintf(":%d", *gatewayPort), nil))
 }
