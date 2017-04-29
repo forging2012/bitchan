@@ -13,7 +13,8 @@ import (
 	"time"
 	"errors"
 	"os"
-	// "net"
+	"net"
+	"encoding/binary"
 )
 
 const (
@@ -532,9 +533,80 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
+	remoteAddr, err := net.ResolveUDPAddr("udp", address)
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.DialUDP("udp", nil, remoteAddr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	var data_len [4]byte
+	binary.LittleEndian.PutUint32(data_len[:], uint32(len(data)))
+	var data_hash [4]byte
+	// TODO(tetsui)
+
+	buf := []byte{}
+	buf = append(buf, data_len[:]...)
+	buf = append(buf, data_hash[:]...)
+	buf = append(buf, data...)
+
+	_, err = conn.Write(buf)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func RunServent() {
+	localAddr, err := net.ResolveUDPAddr("udp", ServentPort)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	conn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	buf := make([]byte, 1024 * 1024)
+
+	for {
+		n, addr, err := conn.ReadFromUDP(buf)
+		addr = addr
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if n < 8 {
+			log.Fatalln("invalid length")
+		}
+		expected_len := binary.LittleEndian.Uint32(buf[0:4])
+		expected_hash := buf[4:8]
+		if n + 8 != int(expected_len) {
+			log.Fatalln("invalid length")
+		}
+		content := buf[8:8+expected_len]
+		// TODO(tetsui): verify hash
+		expected_hash = expected_hash
+
+		var msg pb.BitchanMessage
+		proto.Unmarshal(content, &msg)
+	}
+}
+
 func main() {
 	blockchain.Init()
 	defer blockchain.Close()
+
+	go RunServent()
 
 	log.Printf("Gateway on http://localhost%s/", GatewayPort)
 	http.HandleFunc("/", httpHandler)
