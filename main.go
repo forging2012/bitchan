@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -18,7 +19,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"bytes"
 )
 
 var defaultName = flag.String("defaultName", "名無しさん", "")
@@ -52,11 +52,11 @@ type Board struct {
 }
 
 type Thread struct {
-	Index   int
-	BoardId string
-	Hash    string
-	Title   string
-	Posts   []Post
+	Index     int
+	BoardId   string
+	Hash      string
+	Title     string
+	Posts     []Post
 	IsLoading bool
 }
 
@@ -79,9 +79,10 @@ type PostCandidate struct {
 }
 
 type Blockchain struct {
-	LastBlock pb.BlockHash
-	DB        *leveldb.DB
+	LastBlock      pb.BlockHash
+	DB             *leveldb.DB
 	TemporaryBlock *pb.Block
+	BlockHeight    map[pb.BlockHash]int
 }
 
 const (
@@ -204,14 +205,14 @@ func (b *Blockchain) HasData(hash []byte) bool {
 }
 
 func (b *Blockchain) GetData(hash []byte) (*pb.StoredValue, error) {
-	prefixes := []struct{
-			Prefix string
-			DataType pb.DataType
-		}{
-			{BlockHeaderPrefix,	pb.DataType_BLOCK_HEADER},
-			{BlockBodyPrefix,	pb.DataType_BLOCK_BODY},
-			{TransactionPrefix,	pb.DataType_TRANSACTION},
-			{PostPrefix,		pb.DataType_POST}}
+	prefixes := []struct {
+		Prefix   string
+		DataType pb.DataType
+	}{
+		{BlockHeaderPrefix, pb.DataType_BLOCK_HEADER},
+		{BlockBodyPrefix, pb.DataType_BLOCK_BODY},
+		{TransactionPrefix, pb.DataType_TRANSACTION},
+		{PostPrefix, pb.DataType_POST}}
 
 	for _, prefix := range prefixes {
 		key := append([]byte(prefix.Prefix), hash...)
@@ -223,13 +224,13 @@ func (b *Blockchain) GetData(hash []byte) (*pb.StoredValue, error) {
 			continue
 		}
 
-		data, err := b.DB.Get(key,  nil)
+		data, err := b.DB.Get(key, nil)
 		if err != nil {
 			return nil, err
 		}
 
 		storedValue := &pb.StoredValue{
-			Data: data,
+			Data:     data,
 			DataType: prefix.DataType}
 		return storedValue, nil
 	}
@@ -238,14 +239,14 @@ func (b *Blockchain) GetData(hash []byte) (*pb.StoredValue, error) {
 }
 
 func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
-	prefixes := []struct{
-			Prefix string
-			DataType pb.DataType
-		}{
-			{BlockHeaderPrefix,	pb.DataType_BLOCK_HEADER},
-			{BlockBodyPrefix,	pb.DataType_BLOCK_BODY},
-			{TransactionPrefix,	pb.DataType_TRANSACTION},
-			{PostPrefix,		pb.DataType_POST}}
+	prefixes := []struct {
+		Prefix   string
+		DataType pb.DataType
+	}{
+		{BlockHeaderPrefix, pb.DataType_BLOCK_HEADER},
+		{BlockBodyPrefix, pb.DataType_BLOCK_BODY},
+		{TransactionPrefix, pb.DataType_TRANSACTION},
+		{PostPrefix, pb.DataType_POST}}
 
 	key := []byte{}
 	for _, prefix := range prefixes {
@@ -322,34 +323,34 @@ func (b *Blockchain) Init() {
 
 	if firstTime {
 		/*
-		p1, t1, _ := b.CreatePost(&PostCandidate{
-			Name:        "名無しさん",
-			Mail:        "",
-			Content:     "1got",
-			ThreadHash:  pb.TransactionHash{},
-			ThreadTitle: "ほげほげスレ",
-			BoardId:     "bitchan"})
-		p2, t2, _ := b.CreatePost(&PostCandidate{
-			Name:        "名無しさん",
-			Mail:        "sage",
-			Content:     "糞スレsage",
-			ThreadHash:  t1.Hash(),
-			ThreadTitle: "",
-			BoardId:     "bitchan"})
-		p3, t3, _ := b.CreatePost(&PostCandidate{
-			Name:        "名無しさん",
-			Mail:        "",
-			Content:     "てますか？",
-			ThreadHash:  pb.TransactionHash{},
-			ThreadTitle: "はげ",
-			BoardId:     "bitchan"})
-		b.PutPost(p1)
-		b.PutPost(p2)
-		b.PutPost(p3)
+			p1, t1, _ := b.CreatePost(&PostCandidate{
+				Name:        "名無しさん",
+				Mail:        "",
+				Content:     "1got",
+				ThreadHash:  pb.TransactionHash{},
+				ThreadTitle: "ほげほげスレ",
+				BoardId:     "bitchan"})
+			p2, t2, _ := b.CreatePost(&PostCandidate{
+				Name:        "名無しさん",
+				Mail:        "sage",
+				Content:     "糞スレsage",
+				ThreadHash:  t1.Hash(),
+				ThreadTitle: "",
+				BoardId:     "bitchan"})
+			p3, t3, _ := b.CreatePost(&PostCandidate{
+				Name:        "名無しさん",
+				Mail:        "",
+				Content:     "てますか？",
+				ThreadHash:  pb.TransactionHash{},
+				ThreadTitle: "はげ",
+				BoardId:     "bitchan"})
+			b.PutPost(p1)
+			b.PutPost(p2)
+			b.PutPost(p3)
 
-		block := pb.Block{}
-		block.Transactions = []*pb.Transaction{t1, t2, t3}
-		block.UpdateBodyHash()
+			block := pb.Block{}
+			block.Transactions = []*pb.Transaction{t1, t2, t3}
+			block.UpdateBodyHash()
 		*/
 
 		block := pb.Block{}
@@ -404,9 +405,9 @@ func (b *Blockchain) NewTemporaryBlock() {
 	b.TemporaryBlock = &pb.Block{
 		BlockHeader: pb.BlockHeader{
 			PreviousBlockHeaderHash: b.LastBlock[:],
-			Timestamp: time.Now().Unix()},
+			Timestamp:               time.Now().Unix()},
 		Transactions: []*pb.Transaction{}}
-	
+
 	if previousTemporaryBlock != nil {
 		for _, transaction := range previousTemporaryBlock.Transactions {
 			hash := transaction.Hash()
@@ -416,7 +417,7 @@ func (b *Blockchain) NewTemporaryBlock() {
 			}
 		}
 	}
-	
+
 	b.TemporaryBlock.UpdateBodyHash()
 }
 
@@ -603,11 +604,11 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 	}
 
 	thread := &Thread{
-		Index:   1,
-		BoardId: board.Id,
-		Hash:    hex.EncodeToString(threadHash[:]),
-		Title:   threadTitle,
-		Posts:   []Post{},
+		Index:     1,
+		BoardId:   board.Id,
+		Hash:      hex.EncodeToString(threadHash[:]),
+		Title:     threadTitle,
+		Posts:     []Post{},
 		IsLoading: isLoadings[0]}
 
 	for i, post := range posts {
@@ -674,7 +675,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 	funcMap := template.FuncMap{
 		"formatTimestamp": formatTimestamp,
-		"formatPost": formatPost}
+		"formatPost":      formatPost}
 
 	threadMatch := regexp.MustCompile("^/test/read\\.cgi/([a-zA-Z0-9]+)/([a-fA-F0-9]+)/?").FindStringSubmatch(r.URL.Path)
 	boardMatch := regexp.MustCompile("^/([a-zA-Z0-9]+)/?$").FindStringSubmatch(r.URL.Path)
@@ -769,7 +770,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = blockchain.PutData(&pb.StoredValue{
 			DataType: pb.DataType_TRANSACTION,
-			Data: data})
+			Data:     data})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -785,7 +786,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Servent struct {
-	Nodes []*pb.Node
+	Nodes  []*pb.Node
 	NodeId []byte
 }
 
@@ -809,7 +810,7 @@ func (s *Servent) RunMining() {
 		if i > statThreshold {
 			currentTime := time.Now()
 			took := currentTime.Sub(lastTime).Seconds()
-			log.Println("mining... ", float64(statThreshold) / took, "hash/s")
+			log.Println("mining... ", float64(statThreshold)/took, "hash/s")
 			i = 0
 			lastTime = currentTime
 
@@ -978,7 +979,7 @@ func (s *Servent) Run() {
 			}
 			if storedValue == nil {
 				replyMsg := &pb.BitchanMessage{
-					TargetId: notifiedHash.Hash,
+					TargetId:  notifiedHash.Hash,
 					FindValue: true}
 				s.SendBitchanMessage(remoteAddr, replyMsg)
 			}
@@ -990,11 +991,11 @@ func (s *Servent) Run() {
 				NotifiedHashes: []*pb.NotifiedHash{
 					&pb.NotifiedHash{
 						DataType: pb.DataType_BLOCK_HEADER,
-						Hash: blockchain.LastBlock[:]}}}
+						Hash:     blockchain.LastBlock[:]}}}
 			s.SendBitchanMessage(remoteAddr, replyMsg)
 		}
 
-		// TODO(tetsui): 
+		// TODO(tetsui):
 		addrFound := false
 		for i := 0; i < len(s.Nodes); i++ {
 			if s.Nodes[i].Address == remoteAddr {
@@ -1053,7 +1054,7 @@ func (s *Servent) NotifyTransaction(hash pb.TransactionHash) {
 		NotifiedHashes: []*pb.NotifiedHash{
 			&pb.NotifiedHash{
 				DataType: pb.DataType_TRANSACTION,
-				Hash: hash[:]}}}
+				Hash:     hash[:]}}}
 	for _, node := range s.Nodes {
 		s.SendBitchanMessage(node.Address, msg)
 	}
@@ -1064,7 +1065,7 @@ func (s *Servent) NotifyBlock(hash pb.BlockHash) {
 		NotifiedHashes: []*pb.NotifiedHash{
 			&pb.NotifiedHash{
 				DataType: pb.DataType_BLOCK_HEADER,
-				Hash: hash[:]}}}
+				Hash:     hash[:]}}}
 	for _, node := range s.Nodes {
 		s.SendBitchanMessage(node.Address, msg)
 	}
