@@ -278,7 +278,8 @@ func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
 		if !b.IsInBlockchain[transactionHash] {
 			b.TemporaryBlock.Transactions = append(b.TemporaryBlock.Transactions, &transaction)
 		}
-		b.TemporaryBlock.UpdateBodyHash()
+
+		b.NewTemporaryBlock()
 	} else if storedValue.DataType == pb.DataType_BLOCK_BODY {
 		var body pb.BlockBody
 		err = proto.Unmarshal(storedValue.Data, &body)
@@ -290,6 +291,8 @@ func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
 			copy(transactionHash[:], hash)
 			b.IsInBlockchain[transactionHash] = true
 		}
+
+		b.NewTemporaryBlock()
 	}
 
 	return nil
@@ -817,11 +820,11 @@ func (s *Servent) RunMining() {
 	}
 	block := *blockchain.TemporaryBlock
 
-	statThreshold := 1000000
+	statThreshold := 100000
 	lastTime := time.Now()
 	for i := 0; true; i++ {
-		hash := block.MiningHash()
 		block.Nonce++
+		hash := block.MiningHash()
 
 		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 {
 			log.Println("found!", hex.EncodeToString(hash[:]))
@@ -834,7 +837,9 @@ func (s *Servent) RunMining() {
 		if i > statThreshold {
 			currentTime := time.Now()
 			took := currentTime.Sub(lastTime).Seconds()
-			log.Println("mining... ", float64(statThreshold)/took, "hash/s")
+			if false {
+				log.Println("mining... ", float64(statThreshold)/took, "hash/s")
+			}
 			i = 0
 			lastTime = currentTime
 
@@ -967,6 +972,9 @@ func (s *Servent) Run() {
 			storedValue, err := blockchain.GetData(msg.TargetId)
 			if err != nil {
 				log.Fatalln(err)
+			}
+			if storedValue == nil && *dumpMessage {
+				log.Println("key not found")
 			}
 			if msg.FindValue && storedValue != nil {
 				replyMsg.StoredValue = storedValue
