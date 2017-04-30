@@ -839,12 +839,14 @@ func (s *Servent) RunMining() {
 			blockchain.PutData(&pb.StoredValue{
 				DataType: pb.DataType_BLOCK_HEADER,
 				Data: headerData})
+			hash := block.BlockHeader.Hash()
+
 			blockchain.PutData(&pb.StoredValue{
 				DataType: pb.DataType_BLOCK_BODY,
 				Data: bodyData})
 			blockchain.UpdateLastBlock()
 
-			s.NotifyBlock(block.BlockHeader.Hash())
+			s.NotifyBlock(hash)
 			blockchain.NewTemporaryBlock()
 			block = *blockchain.TemporaryBlock
 		}
@@ -1109,6 +1111,7 @@ func (s *Servent) NotifyTransaction(hash pb.TransactionHash) {
 }
 
 func (s *Servent) NotifyBlock(hash pb.BlockHash) {
+	log.Println("notifying", hex.EncodeToString(hash[:]))
 	msg := &pb.BitchanMessage{
 		NotifiedHashes: []*pb.NotifiedHash{
 			&pb.NotifiedHash{
