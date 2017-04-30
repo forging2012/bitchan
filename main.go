@@ -533,10 +533,18 @@ func (b *Blockchain) ListPostHashOfBoard(boardId string) []pb.PostHash {
 func (b *Blockchain) ListThreadHashOfBoard(boardId string) []pb.TransactionHash {
 	results := []pb.TransactionHash{}
 	currentHash := b.LastBlock
+	temporaryBlock := b.TemporaryBlock
 	for {
-		block, err := b.GetBlock(currentHash)
-		if err != nil {
-			log.Fatalln("invalid blockchain: ", err)
+		var block *pb.Block
+		var err error
+		if temporaryBlock != nil {
+			block = temporaryBlock
+			temporaryBlock = nil
+		} else {
+			block, err = b.GetBlock(currentHash)
+			if err != nil {
+				log.Fatalln("invalid blockchain: ", err)
+			}
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -790,11 +798,11 @@ func (s *Servent) RunMining() {
 		hash := block.MiningHash()
 		block.Nonce++
 
-		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 && hash[3] == 0 {
+		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 {
 			log.Println("found!", hex.EncodeToString(hash[:]))
 			blockchain.PutBlock(&block)
 			s.NotifyBlock(block.BlockHeader.Hash())
-			b.NewTemporaryBlock()
+			blockchain.NewTemporaryBlock()
 			block = *blockchain.TemporaryBlock
 		}
 
