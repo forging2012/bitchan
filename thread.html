@@ -48,6 +48,14 @@ dd {
           <dd>{{.Content | formatPost}}</dd>
         {{end}}
 			{{end}}
+
+      {{if .Exceeded}}
+        <dt>1001 : <span class="post-name">１００１</span> : Over 1000 Thread</dt>
+        <dd>
+          このスレッドは１０００を超えました。 <br>
+          もう書けないので、新しいスレッドを立ててくださいです。。。
+        </dd>
+      {{end}}
 		</dl>
 
 		<hr>
@@ -57,17 +65,19 @@ dd {
 		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
 		</div>
 
-		<form method="POST" action="/test/bbs.cgi">
-			<input type="submit" value="書き込む" name="submit">
-			名前:
-			<input name="postName" size="19">
-			E-mail:
-			<input name="mail" size="19">
-			<br>
-			<textarea rows="5" cols="70" wrap="off" name="content"></textarea>
-			<input type="hidden" name="boardId" value="{{.BoardId}}">
-			<input type="hidden" name="threadHash" value="{{.Hash}}">
-		</form>
+    {{if not .ReadOnly}}
+      <form method="POST" action="/test/bbs.cgi">
+        <input type="submit" value="書き込む" name="submit">
+        名前:
+        <input name="postName" size="19">
+        E-mail:
+        <input name="mail" size="19">
+        <br>
+        <textarea rows="5" cols="70" wrap="off" name="content"></textarea>
+        <input type="hidden" name="boardId" value="{{.BoardId}}">
+        <input type="hidden" name="threadHash" value="{{.Hash}}">
+      </form>
+    {{end}}
 		bitchan ver 0.1 <span class="post-name">peryaudo ★</span>
 	</body>
 </html>

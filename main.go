@@ -58,6 +58,8 @@ type Thread struct {
 	Title     string
 	Posts     []Post
 	IsLoading bool
+	ReadOnly  bool
+	Exceeded  bool
 }
 
 type Post struct {
@@ -633,7 +635,10 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 		Hash:      hex.EncodeToString(threadHash[:]),
 		Title:     threadTitle,
 		Posts:     []Post{},
-		IsLoading: isLoadings[0]}
+		IsLoading: isLoadings[0],
+		// TODO(tetsui): Set ReadOnly if thread post is older than certain number of blocks.
+		ReadOnly:  len(posts) >= 1000,
+		Exceeded:  len(posts) >= 1000}
 
 	for i, post := range posts {
 		thread.Posts = append(thread.Posts, Post{
