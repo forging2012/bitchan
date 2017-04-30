@@ -827,8 +827,22 @@ func (s *Servent) RunMining() {
 		hash := block.MiningHash()
 
 		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 {
-			log.Println("found!", hex.EncodeToString(hash[:]))
-			blockchain.PutBlock(&block)
+			log.Println("Block Mined!", hex.EncodeToString(hash[:]))
+			headerData, err := proto.Marshal(&block.BlockHeader)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			bodyData, err := proto.Marshal(&block.BlockBody)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			blockchain.PutData(&pb.StoredValue{
+				DataType: pb.DataType_BLOCK_HEADER,
+				Data: headerData})
+			blockchain.PutData(&pb.StoredValue{
+				DataType: pb.DataType_BLOCK_BODY,
+				Data: bodyData})
+
 			s.NotifyBlock(block.BlockHeader.Hash())
 			blockchain.NewTemporaryBlock()
 			block = *blockchain.TemporaryBlock
