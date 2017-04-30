@@ -8,6 +8,7 @@ import (
 	"bytes"
 )
 
+// TODO(tetsui): To []byte instead of that
 type BlockHash [20]byte
 type BlockBodyHash [20]byte
 type TransactionHash [20]byte

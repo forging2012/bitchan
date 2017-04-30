@@ -65,7 +65,7 @@ message BitchanMessage {
 	bool find_value = 4;
 
 	// Response for FIND_NODE or FIND_VALUE
-	repeated bytes nodes = 5;
+	repeated Node nodes = 5;
 
 	// STORE
 	StoredValue stored_value = 6;

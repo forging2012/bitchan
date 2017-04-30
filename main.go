@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"golang.org/x/crypto/ripemd160"
 )
 
 var defaultName = flag.String("defaultName", "名無しさん", "")
@@ -184,6 +185,68 @@ func (b *Blockchain) PutPost(post *pb.Post) error {
 		return err
 	}
 	return nil
+}
+
+func (b *Blockchain) GetData(hash []byte) (*pb.StoredValue, error) {
+	prefixes := []struct{
+			Prefix string
+			DataType pb.DataType
+		}{
+			{BlockHeaderPrefix,	pb.DataType_BLOCK_HEADER},
+			{BlockBodyPrefix,	pb.DataType_BLOCK_BODY},
+			{TransactionPrefix,	pb.DataType_TRANSACTION},
+			{PostPrefix,		pb.DataType_POST}}
+
+	for _, prefix := range prefixes {
+		key := append([]byte(prefix.Prefix), hash...)
+		ok, err := b.DB.Has(key, nil)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+
+		data, err := b.DB.Get(key,  nil)
+		if err != nil {
+			return nil, err
+		}
+
+		storedValue := &pb.StoredValue{
+			Data: data,
+			DataType: prefix.DataType}
+		return storedValue, nil
+	}
+
+	return nil, nil
+}
+
+func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
+	prefixes := []struct{
+			Prefix string
+			DataType pb.DataType
+		}{
+			{BlockHeaderPrefix,	pb.DataType_BLOCK_HEADER},
+			{BlockBodyPrefix,	pb.DataType_BLOCK_BODY},
+			{TransactionPrefix,	pb.DataType_TRANSACTION},
+			{PostPrefix,		pb.DataType_POST}}
+
+	key := []byte{}
+	for _, prefix := range prefixes {
+		if prefix.DataType == storedValue.DataType {
+			key = []byte(prefix.Prefix)
+		}
+	}
+	if len(key) == 0 {
+		return errors.New("wtf")
+	}
+
+	h := ripemd160.New()
+	h.Write(storedValue.Data)
+
+	key = append(key, h.Sum(nil)...)
+
+	return b.DB.Put(key, storedValue.Data, nil)
 }
 
 func (b *Blockchain) Init() {
@@ -583,6 +646,15 @@ func (s *Servent) RegularlyPing() {
 	}
 }
 
+func (s *Servent) PickFromKBuckets(targetId []byte) []*pb.Node {
+	// TODO(tetsui):
+	return []*pb.Node{}
+}
+
+func (s *Servent) StoreToKBuckets(nodes []*pb.Node) {
+	// TODO(tetsui):
+}
+
 func (s *Servent) Run() {
 	go s.RegularlyPing()
 
@@ -629,8 +701,12 @@ func (s *Servent) Run() {
 		// FIND_NODE or FIND_VALUE requested.
 		if len(msg.TargetId) > 0 {
 			replyMsg := &pb.BitchanMessage{}
-			if msg.FindValue && blockchain.HasData(msg.TargedId) {
-				replyMsg.StoredValue = blockchain.GetData(msg.TargetId)
+			storedValue, err := blockchain.GetData(msg.TargetId)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			if msg.FindValue && storedValue != nil {
+				replyMsg.StoredValue = storedValue
 			} else {
 				replyMsg.Nodes = s.PickFromKBuckets(msg.TargetId)
 			}
@@ -645,15 +721,21 @@ func (s *Servent) Run() {
 
 		// STORE_VALUE
 		if msg.StoredValue != nil {
-			blockchain.PutData(msg.StoredValue)
+			err = blockchain.PutData(msg.StoredValue)
+			if err != nil {
+				log.Fatalln(err)
+			}
 		}
 		
 		// inv of Bitcoin
 		for _, notifiedHash := range msg.NotifiedHashes {
-			if !blockchain.HasData(notifiedHash.hash) {
+			storedValue, err := blockchain.GetData(notifiedHash.Hash)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			if storedValue == nil {
 				replyMsg := &pb.BitchanMessage{
-					TargetId: notifiedHash.hash}
-				replyMsg := &pb.BitchanMessage{}
+					TargetId: notifiedHash.Hash}
 				s.SendBitchanMessage(remoteAddr, replyMsg)
 			}
 		}
