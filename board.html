@@ -52,39 +52,47 @@ dd {
 			{{end}}
 		</div>
 		{{range .Threads}}
-		<div class="thread">
-		<h2><a name="{{.Index}}">{{.Title}}</a></h2>
-		<dl>
-			{{range .Posts}}
-			<dt>{{.Index}} :
-			{{if .Mail}}
-			<span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
-			{{else}}
-			<span class="post-name">{{.Name}}</span>
-			{{end}}
-			: {{.Timestamp | formatTimestamp}}</dt>
-			<dd>{{.Content}}</dd>
-			{{end}}
-		</dl>
-		<hr>
-		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/">全部読む</a>
-		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
-		<a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/-100">1-100</a>
-		<a href="#menu">板のトップ</a>
-		<a href="/{{.BoardId}}/">リロード</a>
-		<hr>
-		<form method="POST" action="/test/bbs.cgi">
-			<input type="submit" value="書き込む" name="submit">
-			名前:
-			<input name="postName" size="19">
-			E-mail:
-			<input name="mail" size="19">
-			<br>
-			<textarea rows="5" cols="70" wrap="off" name="content"></textarea>
-			<input type="hidden" name="boardId" value="{{.BoardId}}">
-			<input type="hidden" name="threadHash" value="{{.Hash}}">
-		</form>
-		</div>
+      <div class="thread">
+      {{if .IsLoading}}
+        <div class="thread-loading">(読み込み中...)</div>
+      {{else}}
+        <h2><a name="{{.Index}}">{{.Title}}</a></h2>
+        <dl>
+          {{range .Posts}}
+            {{if .IsLoading}}
+              <dt>{{.Index}} : (読み込み中...)</dt>
+            {{else}}
+              <dt>{{.Index}} :
+              {{if .Mail}}
+              <span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
+              {{else}}
+              <span class="post-name">{{.Name}}</span>
+              {{end}}
+              : {{.Timestamp | formatTimestamp}}</dt>
+              <dd>{{.Content}}</dd>
+            {{end}}
+          {{end}}
+        </dl>
+        <hr>
+        <a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/">全部読む</a>
+        <a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/l50">最新50</a>
+        <a href="/test/read.cgi/{{.BoardId}}/{{.Hash}}/-100">1-100</a>
+        <a href="#menu">板のトップ</a>
+        <a href="/{{.BoardId}}/">リロード</a>
+        <hr>
+        <form method="POST" action="/test/bbs.cgi">
+          <input type="submit" value="書き込む" name="submit">
+          名前:
+          <input name="postName" size="19">
+          E-mail:
+          <input name="mail" size="19">
+          <br>
+          <textarea rows="5" cols="70" wrap="off" name="content"></textarea>
+          <input type="hidden" name="boardId" value="{{.BoardId}}">
+          <input type="hidden" name="threadHash" value="{{.Hash}}">
+        </form>
+      {{end}}
+      </div>
 		{{end}}
 		<div class="info">
 			<form method="POST" action="/test/bbs.cgi">

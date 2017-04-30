@@ -56,6 +56,7 @@ type Thread struct {
 	Hash    string
 	Title   string
 	Posts   []Post
+	IsLoading bool
 }
 
 type Post struct {
@@ -64,6 +65,7 @@ type Post struct {
 	Mail      string
 	Timestamp int64
 	Content   string
+	IsLoading bool
 }
 
 type PostCandidate struct {
@@ -480,24 +482,31 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 
 	postHashes := b.ListPostHashOfThread(boardId, threadHash)
 	posts := []*pb.Post{}
+	isLoadings := []bool{}
 	for _, postHash := range postHashes {
 		post, err := b.GetPost(postHash)
 		if err != nil {
 			post = &pb.Post{}
 		}
 		posts = append(posts, post)
+		isLoadings = append(isLoadings, err != nil)
 	}
-	if len(posts) == 0 || posts[0].ThreadTitle == "" {
-		// TODO(tetsui): make it work when some are still not available
+	if len(posts) == 0 {
 		return nil, errors.New("invalid thread")
+	}
+
+	threadTitle := posts[0].ThreadTitle
+	if isLoadings[0] {
+		threadTitle = "(読み込み中...)"
 	}
 
 	thread := &Thread{
 		Index:   1,
 		BoardId: board.Id,
 		Hash:    hex.EncodeToString(threadHash[:]),
-		Title:   posts[0].ThreadTitle,
-		Posts:   []Post{}}
+		Title:   threadTitle,
+		Posts:   []Post{},
+		IsLoading: isLoadings[0]}
 
 	for i, post := range posts {
 		thread.Posts = append(thread.Posts, Post{
@@ -505,7 +514,8 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 			Name:      post.Name,
 			Mail:      post.Mail,
 			Timestamp: post.Timestamp,
-			Content:   post.Content})
+			Content:   post.Content,
+			IsLoading: isLoadings[i]})
 	}
 
 	return thread, nil

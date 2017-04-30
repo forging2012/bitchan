@@ -35,14 +35,18 @@ dd {
 		<h1>{{.Title}}</h1>
 		<dl>
 			{{range .Posts}}
-			<dt>{{.Index}} :
-			{{if .Mail}}
-			<span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
-			{{else}}
-			<span class="post-name">{{.Name}}</span>
-			{{end}}
-			: {{.Timestamp | formatTimestamp}}</dt>
-			<dd>{{.Content}}</dd>
+        {{if .IsLoading}}
+          <dt>{{.Index}} : (読み込み中...)</dt>
+        {{else}}
+          <dt>{{.Index}} :
+          {{if .Mail}}
+          <span class="post-name"><a href="mailto:{{.Mail}}">{{.Name}}</a></span>
+          {{else}}
+          <span class="post-name">{{.Name}}</span>
+          {{end}}
+          : {{.Timestamp | formatTimestamp}}</dt>
+          <dd>{{.Content}}</dd>
+        {{end}}
 			{{end}}
 		</dl>
 
