@@ -842,6 +842,7 @@ func (s *Servent) RunMining() {
 			blockchain.PutData(&pb.StoredValue{
 				DataType: pb.DataType_BLOCK_BODY,
 				Data: bodyData})
+			blockchain.UpdateLastBlock()
 
 			s.NotifyBlock(block.BlockHeader.Hash())
 			blockchain.NewTemporaryBlock()
