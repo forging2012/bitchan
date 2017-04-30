@@ -45,7 +45,7 @@ dd {
           <span class="post-name">{{.Name}}</span>
           {{end}}
           : {{.Timestamp | formatTimestamp}}</dt>
-          <dd>{{.Content}}</dd>
+          <dd>{{.Content | formatPost}}</dd>
         {{end}}
 			{{end}}
 		</dl>

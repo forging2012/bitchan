@@ -37,7 +37,7 @@ var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
 
 // - Write transaction part
 // - Write mining part
-// - Write simple unstructured network part
+// v Write simple unstructured network part
 // - Write DHT network part
 
 // https://github.com/grpc/grpc-go/blob/master/examples/helloworld/greeter_client/main.go
@@ -560,13 +560,19 @@ func formatTimestamp(timestamp int64) string {
 	return time.Unix(timestamp, 0).Format("2006/01/02 15:04:05")
 }
 
+func formatPost(text string) template.HTML {
+	return template.HTML(strings.Replace(template.HTMLEscapeString(text), "\n", "<br>", -1))
+}
+
 func httpHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && r.URL.Path == "/ba.gif" {
 		http.ServeFile(w, r, "ba.gif")
 		return
 	}
 
-	funcMap := template.FuncMap{"formatTimestamp": formatTimestamp}
+	funcMap := template.FuncMap{
+		"formatTimestamp": formatTimestamp,
+		"formatPost": formatPost}
 
 	threadMatch := regexp.MustCompile("^/test/read\\.cgi/([a-zA-Z0-9]+)/([a-fA-F0-9]+)/?").FindStringSubmatch(r.URL.Path)
 	boardMatch := regexp.MustCompile("^/([a-zA-Z0-9]+)/?$").FindStringSubmatch(r.URL.Path)
