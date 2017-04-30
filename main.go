@@ -36,14 +36,14 @@ type BoardListItem struct {
 
 var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
 
-// - Write transaction part
-// - Write mining part
-// v Write simple unstructured network part
-// - Write DHT network part
-
-// https://github.com/grpc/grpc-go/blob/master/examples/helloworld/greeter_client/main.go
-// http://www.grpc.io/docs/tutorials/basic/go.html
-// https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf
+// 何から進めていくか
+// - UIの整備
+//   - sageの実装、アンカー、1000で落ち、範囲限定表示、スレ落ち、文字数制限、スレサイズ制限
+// - coinbaseとトランザクション
+// - データ取得部(time.Sleepしてるとこ)と全体のリファクタリング
+// - ブロックの検証
+// - 難易度の調整
+// - DHT
 
 type Board struct {
 	Id        string
