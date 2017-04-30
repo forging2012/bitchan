@@ -681,6 +681,30 @@ type Servent struct {
 	NodeId []byte
 }
 
+func (s *Servent) RunMining() {
+	block := pb.Block{}
+	block.UpdateBodyHash()
+
+	statThreshold := 10000000
+	lastTime := time.Now()
+	for i := 0; true; i++ {
+		hash := block.MiningHash()
+		block.Nonce++
+
+		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 {
+			log.Println("found!", hex.EncodeToString(hash[:]))
+		}
+
+		if i > statThreshold {
+			currentTime := time.Now()
+			took := currentTime.Sub(lastTime).Seconds()
+			log.Println("mining... ", float64(statThreshold) / took, "hash/s")
+			i = 0
+			lastTime = currentTime
+		}
+	}
+}
+
 func (s *Servent) RegularlyPing() {
 	s.Nodes = []*pb.Node{}
 	for _, initNode := range strings.Split(*initNodes, ",") {
@@ -751,6 +775,7 @@ func (s *Servent) RequestMissing(storedValue *pb.StoredValue) error {
 }
 
 func (s *Servent) Run() {
+	go s.RunMining()
 	go s.RegularlyPing()
 
 	log.Printf("Servent on localhost:%d", *serventPort)

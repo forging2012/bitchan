@@ -4,7 +4,12 @@ package bitchan_pb;
 message BlockHeader {
 	bytes previous_block_header_hash = 1;
 	bytes body_hash = 2;
+
+	// https://en.bitcoin.it/wiki/Block_timestamp
+	// valid if it is greater than the median timestamp of previous 11 blocks,
+	// and less than the network-adjusted time + 2 hours
 	int64 timestamp = 3;
+
 	uint64 nonce = 4;
 	float difficulty = 5;
 }

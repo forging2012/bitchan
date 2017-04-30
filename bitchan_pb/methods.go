@@ -1,7 +1,7 @@
 package bitchan_pb
 
 import (
-	// "crypto/sha256"
+	"crypto/sha256"
 	"golang.org/x/crypto/ripemd160"
 	"github.com/golang/protobuf/proto"
 	"log"
@@ -10,6 +10,7 @@ import (
 
 // TODO(tetsui): To []byte instead of that
 type BlockHash [20]byte
+type BlockMiningHash [32]byte
 type BlockBodyHash [20]byte
 type TransactionHash [20]byte
 type PostHash [20]byte
@@ -32,6 +33,24 @@ func (b *Block) UpdateBodyHash() {
 	b.BlockHeader.BodyHash = bodyHash[:]
 }
 
+func Hash160(data []byte) []byte {
+	hs := sha256.New()
+	hs.Write(data)
+	data = hs.Sum(nil)
+	hr := ripemd160.New()
+	hr.Write(data)
+	return hr.Sum(nil)
+}
+
+func Hash256(data []byte) []byte {
+	h := sha256.New()
+	h.Write(data)
+	data = h.Sum(nil)
+	h = sha256.New()
+	h.Write(data)
+	return h.Sum(nil)
+}
+
 // TODO(tetsui): Change to RIPEMD160(SHA256(P))
 
 func (bh *BlockHeader) Hash() BlockHash {
@@ -39,10 +58,18 @@ func (bh *BlockHeader) Hash() BlockHash {
 	if err != nil {
 		log.Fatal("marshaling error:", err)
 	}
-	h := ripemd160.New()
-	h.Write(data)
 	var res BlockHash
-	copy(res[:], h.Sum(nil))
+	copy(res[:], Hash160(data))
+	return res
+}
+
+func (bh *BlockHeader) MiningHash() BlockMiningHash {
+	data, err := proto.Marshal(bh)
+	if err != nil {
+		log.Fatal("marshaling error:", err)
+	}
+	var res BlockMiningHash
+	copy(res[:], Hash256(data))
 	return res
 }
 
@@ -51,10 +78,8 @@ func (bb *BlockBody) Hash() BlockBodyHash {
 	if err != nil {
 		log.Fatal("marshaling error:", err)
 	}
-	h := ripemd160.New()
-	h.Write(data)
 	var res BlockBodyHash
-	copy(res[:], h.Sum(nil))
+	copy(res[:], Hash160(data))
 	return res
 }
 
@@ -63,10 +88,8 @@ func (t *Transaction) Hash() TransactionHash {
 	if err != nil {
 		log.Fatal("marshaling error:", err)
 	}
-	h := ripemd160.New()
-	h.Write(data)
 	var res TransactionHash
-	copy(res[:], h.Sum(nil))
+	copy(res[:], Hash160(data))
 	return res
 }
 
@@ -75,10 +98,8 @@ func (p *Post) Hash() PostHash {
 	if err != nil {
 		log.Fatal("marshaling error:", err)
 	}
-	h := ripemd160.New()
-	h.Write(data)
 	var res PostHash
-	copy(res[:], h.Sum(nil))
+	copy(res[:], Hash160(data))
 	return res
 }
 
