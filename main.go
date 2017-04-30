@@ -187,6 +187,14 @@ func (b *Blockchain) PutPost(post *pb.Post) error {
 	return nil
 }
 
+func (b *Blockchain) HasData(hash []byte) bool {
+	storedValue, err := b.GetData(hash)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return storedValue != nil
+}
+
 func (b *Blockchain) GetData(hash []byte) (*pb.StoredValue, error) {
 	prefixes := []struct{
 			Prefix string
@@ -259,6 +267,7 @@ func (b *Blockchain) Init() {
 	}
 
 	if firstTime {
+		/*
 		p1, t1, _ := b.CreatePost(&PostCandidate{
 			Name:        "名無しさん",
 			Mail:        "",
@@ -287,7 +296,10 @@ func (b *Blockchain) Init() {
 		block := pb.Block{}
 		block.Transactions = []*pb.Transaction{t1, t2, t3}
 		block.UpdateBodyHash()
+		*/
 
+		block := pb.Block{}
+		block.UpdateBodyHash()
 		b.PutBlock(&block)
 	}
 
@@ -526,6 +538,7 @@ func (b *Blockchain) ConstructBoard(boardId string) (*Board, error) {
 }
 
 var blockchain Blockchain
+var servent Servent
 
 func formatTimestamp(timestamp int64) string {
 	return time.Unix(timestamp, 0).Format("2006/01/02 15:04:05")
@@ -612,6 +625,9 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		blockchain.PutBlock(&block)
 		blockchain.LastBlock = block.BlockHeader.Hash()
 
+		servent.NotifyTransaction(transaction.Hash())
+		servent.NotifyBlock(block.BlockHeader.Hash())
+
 		tmpl := template.Must(template.New("post.html").Funcs(funcMap).ParseFiles("post.html"))
 		tmpl.Execute(w, map[string]string{"BoardId": r.FormValue("boardId")})
 	} else {
@@ -620,15 +636,15 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Servent struct {
-	Nodes []pb.Node
+	Nodes []*pb.Node
 	NodeId []byte
 }
 
 func (s *Servent) RegularlyPing() {
-	s.Nodes = []pb.Node{}
+	s.Nodes = []*pb.Node{}
 	for _, initNode := range strings.Split(*initNodes, ",") {
 		if len(initNode) > 0 {
-			s.Nodes = append(s.Nodes, pb.Node{
+			s.Nodes = append(s.Nodes, &pb.Node{
 				Address: initNode})
 		}
 	}
@@ -640,7 +656,7 @@ func (s *Servent) RegularlyPing() {
 			if err != nil {
 				log.Fatalln(err)
 			}
-			time.Sleep(time.Second)
+			time.Sleep(30 * time.Second)
 		}
 		time.Sleep(time.Second)
 	}
@@ -648,11 +664,47 @@ func (s *Servent) RegularlyPing() {
 
 func (s *Servent) PickFromKBuckets(targetId []byte) []*pb.Node {
 	// TODO(tetsui):
-	return []*pb.Node{}
+	return s.Nodes
 }
 
 func (s *Servent) StoreToKBuckets(nodes []*pb.Node) {
 	// TODO(tetsui):
+}
+
+func (s *Servent) Request(targetId []byte) {
+	if blockchain.HasData(targetId) {
+		return
+	}
+
+	for _, node := range s.PickFromKBuckets(targetId) {
+		msg := &pb.BitchanMessage{TargetId: targetId, FindValue: true}
+		err := s.SendBitchanMessage(node.Address, msg)
+		log.Fatalln(err)
+	}
+}
+
+func (s *Servent) RequestMissing(storedValue *pb.StoredValue) error {
+	if storedValue.DataType == pb.DataType_BLOCK_HEADER {
+		var blockHeader pb.BlockHeader
+		err := proto.Unmarshal(storedValue.Data, &blockHeader)
+		if err != nil {
+			return err
+		}
+
+		s.Request(blockHeader.PreviousBlockHeaderHash)
+		s.Request(blockHeader.BodyHash)
+	} else if storedValue.DataType == pb.DataType_BLOCK_BODY {
+		var blockBody pb.BlockBody
+		err := proto.Unmarshal(storedValue.Data, &blockBody)
+		if err != nil {
+			return err
+		}
+
+		for _, transactionHash := range blockBody.TransactionHashes {
+			s.Request(transactionHash)
+		}
+	}
+	return nil
 }
 
 func (s *Servent) Run() {
@@ -725,8 +777,10 @@ func (s *Servent) Run() {
 			if err != nil {
 				log.Fatalln(err)
 			}
+
+			s.RequestMissing(msg.StoredValue)
 		}
-		
+
 		// inv of Bitcoin
 		for _, notifiedHash := range msg.NotifiedHashes {
 			storedValue, err := blockchain.GetData(notifiedHash.Hash)
@@ -755,13 +809,15 @@ func (s *Servent) Run() {
 			}
 		}
 		if !addrFound {
-			s.Nodes = append(s.Nodes, pb.Node{Address: remoteAddr, NodeId: msg.OwnNodeId})
+			s.Nodes = append(s.Nodes, &pb.Node{Address: remoteAddr, NodeId: msg.OwnNodeId})
 		}
 	}
 }
 
 func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
 	msg.OwnPort = int32(*serventPort)
+
+	log.Println("I say", msg.String())
 
 	remoteAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
@@ -796,13 +852,34 @@ func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) err
 	return nil
 }
 
+func (s *Servent) NotifyTransaction(hash pb.TransactionHash) {
+	msg := &pb.BitchanMessage{
+		NotifiedHashes: []*pb.NotifiedHash{
+			&pb.NotifiedHash{
+				DataType: pb.DataType_TRANSACTION,
+				Hash: hash[:]}}}
+	for _, node := range s.Nodes {
+		s.SendBitchanMessage(node.Address, msg)
+	}
+}
+
+func (s *Servent) NotifyBlock(hash pb.BlockHash) {
+	msg := &pb.BitchanMessage{
+		NotifiedHashes: []*pb.NotifiedHash{
+			&pb.NotifiedHash{
+				DataType: pb.DataType_BLOCK_HEADER,
+				Hash: hash[:]}}}
+	for _, node := range s.Nodes {
+		s.SendBitchanMessage(node.Address, msg)
+	}
+}
+
 func main() {
 	flag.Parse()
 
 	blockchain.Init()
 	defer blockchain.Close()
 
-	var servent Servent
 	go servent.Run()
 
 	log.Printf("Gateway on http://localhost:%d/", *gatewayPort)
