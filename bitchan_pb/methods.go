@@ -22,6 +22,7 @@ type Block struct {
 }
 
 func (b *Block) UpdateBodyHash() {
+	b.BlockBody.TransactionHashes = [][]byte{}
 	for _, transaction := range b.Transactions {
 		transactionHash := transaction.Hash()
 		b.BlockBody.TransactionHashes = append(

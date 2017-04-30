@@ -18,7 +18,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"golang.org/x/crypto/ripemd160"
+	"bytes"
 )
 
 var defaultName = flag.String("defaultName", "名無しさん", "")
@@ -27,6 +27,7 @@ var serventPort = flag.Int("serventPort", 8686, "")
 var initNodes = flag.String("initNodes", "", "")
 var dhtBucketSize = flag.Int("dhtBucketSize", 20, "Size of k-bucket in Kademlia DHT.")
 var dumpMessage = flag.Bool("dumpMessage", false, "Dump all the BitchanMessage")
+var mining = flag.Bool("mining", true, "Mine block")
 
 type BoardListItem struct {
 	Name string
@@ -80,6 +81,7 @@ type PostCandidate struct {
 type Blockchain struct {
 	LastBlock pb.BlockHash
 	DB        *leveldb.DB
+	TemporaryBlock *pb.Block
 }
 
 const (
@@ -157,6 +159,9 @@ func (b *Blockchain) PutBlock(block *pb.Block) error {
 		key = append([]byte(TransactionPrefix), th[:]...)
 		err = b.DB.Put(key, data, nil)
 	}
+
+	blockchain.UpdateLastBlock()
+
 	return nil
 }
 
@@ -252,12 +257,58 @@ func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
 		return errors.New("wtf")
 	}
 
-	h := ripemd160.New()
-	h.Write(storedValue.Data)
+	hash := pb.Hash160(storedValue.Data)
+	key = append(key, hash...)
 
-	key = append(key, h.Sum(nil)...)
+	err := b.DB.Put(key, storedValue.Data, nil)
+	if err != nil {
+		return err
+	}
 
-	return b.DB.Put(key, storedValue.Data, nil)
+	if storedValue.DataType == pb.DataType_TRANSACTION {
+		var transaction pb.Transaction
+		err = proto.Unmarshal(storedValue.Data, &transaction)
+		if err != nil {
+			return err
+		}
+		if !b.IsInBlockchain(hash) {
+			b.TemporaryBlock.Transactions = append(b.TemporaryBlock.Transactions, &transaction)
+		}
+		b.TemporaryBlock.UpdateBodyHash()
+	}
+
+	return nil
+}
+
+func (b *Blockchain) IsInBlockchain(transactionHash []byte) bool {
+	currentHash := b.LastBlock
+	temporaryBlock := b.TemporaryBlock
+	for {
+		var err error
+		var block *pb.Block
+		if temporaryBlock != nil {
+			block = temporaryBlock
+			temporaryBlock = nil
+		} else {
+			block, err = b.GetBlock(currentHash)
+			if err != nil {
+				log.Fatalln("invalid blockchain: ", err)
+			}
+		}
+
+		for _, haystackHash := range block.TransactionHashes {
+			if bytes.Equal(transactionHash, haystackHash) {
+				return true
+			}
+		}
+
+		// Genesis block.
+		if len(block.PreviousBlockHeaderHash) == 0 {
+			break
+		}
+		copy(currentHash[:], block.PreviousBlockHeaderHash)
+	}
+	return false
 }
 
 func (b *Blockchain) Init() {
@@ -310,6 +361,8 @@ func (b *Blockchain) Init() {
 }
 
 func (b *Blockchain) UpdateLastBlock() {
+	previousLastBlock := b.LastBlock
+
 	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockHeaderPrefix)), nil)
 	blockHashes := []pb.BlockHash{}
 	blockRef := make(map[pb.BlockHash]bool)
@@ -339,7 +392,32 @@ func (b *Blockchain) UpdateLastBlock() {
 		}
 	}
 
-	log.Println("Current latest block is ", hex.EncodeToString(b.LastBlock[:]))
+	if previousLastBlock != b.LastBlock {
+		log.Println("Current latest block is ", hex.EncodeToString(b.LastBlock[:]))
+		b.NewTemporaryBlock()
+	}
+}
+
+func (b *Blockchain) NewTemporaryBlock() {
+	previousTemporaryBlock := b.TemporaryBlock
+
+	b.TemporaryBlock = &pb.Block{
+		BlockHeader: pb.BlockHeader{
+			PreviousBlockHeaderHash: b.LastBlock[:],
+			Timestamp: time.Now().Unix()},
+		Transactions: []*pb.Transaction{}}
+	
+	if previousTemporaryBlock != nil {
+		for _, transaction := range previousTemporaryBlock.Transactions {
+			hash := transaction.Hash()
+			if !b.IsInBlockchain(hash[:]) {
+				b.TemporaryBlock.Transactions =
+					append(b.TemporaryBlock.Transactions, transaction)
+			}
+		}
+	}
+	
+	b.TemporaryBlock.UpdateBodyHash()
 }
 
 func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *pb.Transaction, err error) {
@@ -367,11 +445,19 @@ func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *
 func (b *Blockchain) ListPostHashOfThread(boardId string, threadHash pb.TransactionHash) []pb.PostHash {
 	results := []pb.PostHash{}
 	currentHash := b.LastBlock
+	temporaryBlock := b.TemporaryBlock
 L:
 	for {
-		block, err := b.GetBlock(currentHash)
-		if err != nil {
-			log.Fatalln("invalid blockchain: ", err)
+		var block *pb.Block
+		var err error
+		if temporaryBlock != nil {
+			block = temporaryBlock
+			temporaryBlock = nil
+		} else {
+			block, err = b.GetBlock(currentHash)
+			if err != nil {
+				log.Fatalln("invalid blockchain: ", err)
+			}
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -409,10 +495,18 @@ L:
 func (b *Blockchain) ListPostHashOfBoard(boardId string) []pb.PostHash {
 	results := []pb.PostHash{}
 	currentHash := b.LastBlock
+	temporaryBlock := b.TemporaryBlock
 	for {
-		block, err := b.GetBlock(currentHash)
-		if err != nil {
-			log.Fatalln("invalid blockchain: ", err)
+		var block *pb.Block
+		var err error
+		if temporaryBlock != nil {
+			block = temporaryBlock
+			temporaryBlock = nil
+		} else {
+			block, err = b.GetBlock(currentHash)
+			if err != nil {
+				log.Fatalln("invalid blockchain: ", err)
+			}
 		}
 
 		for i := len(block.Transactions) - 1; i >= 0; i-- {
@@ -658,16 +752,22 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		blockchain.PutPost(post)
-		block := pb.Block{}
-		block.Transactions = []*pb.Transaction{transaction}
-		block.UpdateBodyHash()
-		prevHash := blockchain.LastBlock
-		block.PreviousBlockHeaderHash = prevHash[:]
-		blockchain.PutBlock(&block)
-		blockchain.UpdateLastBlock()
+
+		data, err := proto.Marshal(transaction)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err = blockchain.PutData(&pb.StoredValue{
+			DataType: pb.DataType_TRANSACTION,
+			Data: data})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		servent.NotifyTransaction(transaction.Hash())
-		servent.NotifyBlock(block.BlockHeader.Hash())
 
 		tmpl := template.Must(template.New("post.html").Funcs(funcMap).ParseFiles("post.html"))
 		tmpl.Execute(w, map[string]string{"BoardId": r.FormValue("boardId")})
@@ -682,17 +782,20 @@ type Servent struct {
 }
 
 func (s *Servent) RunMining() {
-	block := pb.Block{}
-	block.UpdateBodyHash()
+	block := *blockchain.TemporaryBlock
 
-	statThreshold := 10000000
+	statThreshold := 1000000
 	lastTime := time.Now()
 	for i := 0; true; i++ {
 		hash := block.MiningHash()
 		block.Nonce++
 
-		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 {
+		if hash[0] == 0 && hash[1] == 0 && hash[2] == 0 && hash[3] == 0 {
 			log.Println("found!", hex.EncodeToString(hash[:]))
+			blockchain.PutBlock(&block)
+			s.NotifyBlock(block.BlockHeader.Hash())
+			b.NewTemporaryBlock()
+			block = *blockchain.TemporaryBlock
 		}
 
 		if i > statThreshold {
@@ -701,6 +804,10 @@ func (s *Servent) RunMining() {
 			log.Println("mining... ", float64(statThreshold) / took, "hash/s")
 			i = 0
 			lastTime = currentTime
+
+			nonce := block.Nonce
+			block = *blockchain.TemporaryBlock
+			block.Nonce = nonce
 		}
 	}
 }
