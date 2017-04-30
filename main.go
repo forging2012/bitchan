@@ -561,6 +561,11 @@ func formatTimestamp(timestamp int64) string {
 }
 
 func httpHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" && r.URL.Path == "/ba.gif" {
+		http.ServeFile(w, r, "ba.gif")
+		return
+	}
+
 	funcMap := template.FuncMap{"formatTimestamp": formatTimestamp}
 
 	threadMatch := regexp.MustCompile("^/test/read\\.cgi/([a-zA-Z0-9]+)/([a-fA-F0-9]+)/?").FindStringSubmatch(r.URL.Path)
@@ -575,6 +580,9 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		for _, postHash := range blockchain.ListPostHashOfBoard(boardName) {
 			servent.Request(postHash[:])
 		}
+
+		// TODO
+		time.Sleep(20 * time.Millisecond)
 
 		board, err := blockchain.ConstructBoard(boardName)
 		if err != nil {
@@ -602,6 +610,9 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		for _, postHash := range blockchain.ListPostHashOfThread(boardName, threadHash) {
 			servent.Request(postHash[:])
 		}
+
+		// TODO
+		time.Sleep(20 * time.Millisecond)
 
 		thread, err := blockchain.ConstructThread(boardName, threadHash)
 		if err != nil {
@@ -829,7 +840,11 @@ func (s *Servent) Run() {
 
 		// When that is ping, then pong.
 		if msg.IsPing {
-			replyMsg := &pb.BitchanMessage{}
+			replyMsg := &pb.BitchanMessage{
+				NotifiedHashes: []*pb.NotifiedHash{
+					&pb.NotifiedHash{
+						DataType: pb.DataType_BLOCK_HEADER,
+						Hash: blockchain.LastBlock[:]}}}
 			s.SendBitchanMessage(remoteAddr, replyMsg)
 		}
 
