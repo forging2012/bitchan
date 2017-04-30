@@ -303,13 +303,17 @@ func (b *Blockchain) Init() {
 		b.PutBlock(&block)
 	}
 
+	b.UpdateLastBlock()
+}
+
+func (b *Blockchain) UpdateLastBlock() {
 	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockHeaderPrefix)), nil)
 	blockHashes := []pb.BlockHash{}
 	blockRef := make(map[pb.BlockHash]bool)
 	for iter.Next() {
 		_, v := iter.Key(), iter.Value()
 		blockHeader := &pb.BlockHeader{}
-		err = proto.Unmarshal(v, blockHeader)
+		err := proto.Unmarshal(v, blockHeader)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -623,7 +627,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 		prevHash := blockchain.LastBlock
 		block.PreviousBlockHeaderHash = prevHash[:]
 		blockchain.PutBlock(&block)
-		blockchain.LastBlock = block.BlockHeader.Hash()
+		blockchain.UpdateLastBlock()
 
 		servent.NotifyTransaction(transaction.Hash())
 		servent.NotifyBlock(block.BlockHeader.Hash())
@@ -679,7 +683,9 @@ func (s *Servent) Request(targetId []byte) {
 	for _, node := range s.PickFromKBuckets(targetId) {
 		msg := &pb.BitchanMessage{TargetId: targetId, FindValue: true}
 		err := s.SendBitchanMessage(node.Address, msg)
-		log.Fatalln(err)
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 }
 
@@ -778,6 +784,10 @@ func (s *Servent) Run() {
 				log.Fatalln(err)
 			}
 
+			if msg.StoredValue.DataType == pb.DataType_BLOCK_HEADER {
+				blockchain.UpdateLastBlock()
+			}
+
 			s.RequestMissing(msg.StoredValue)
 		}
 
@@ -789,7 +799,8 @@ func (s *Servent) Run() {
 			}
 			if storedValue == nil {
 				replyMsg := &pb.BitchanMessage{
-					TargetId: notifiedHash.Hash}
+					TargetId: notifiedHash.Hash,
+					FindValue: true}
 				s.SendBitchanMessage(remoteAddr, replyMsg)
 			}
 		}
