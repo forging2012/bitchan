@@ -83,6 +83,7 @@ type Blockchain struct {
 	DB             *leveldb.DB
 	TemporaryBlock *pb.Block
 	BlockHeight    map[pb.BlockHash]int
+	IsInBlockchain map[pb.TransactionHash]bool
 }
 
 const (
@@ -99,7 +100,7 @@ func (b *Blockchain) GetBlock(blockHash pb.BlockHash) (*pb.Block, error) {
 	headerKey := append([]byte(BlockHeaderPrefix), blockHash[:]...)
 	data, err := b.DB.Get(headerKey, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Header: " + err.Error())
 	}
 	err = proto.Unmarshal(data, &block.BlockHeader)
 	if err != nil {
@@ -108,7 +109,7 @@ func (b *Blockchain) GetBlock(blockHash pb.BlockHash) (*pb.Block, error) {
 	bodyKey := append([]byte(BlockBodyPrefix), block.BodyHash[:]...)
 	data, err = b.DB.Get(bodyKey, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("Body: " + err.Error())
 	}
 	err = proto.Unmarshal(data, &block.BlockBody)
 	if err != nil {
@@ -118,7 +119,7 @@ func (b *Blockchain) GetBlock(blockHash pb.BlockHash) (*pb.Block, error) {
 		transactionKey := append([]byte(TransactionPrefix), transactionHash...)
 		data, err = b.DB.Get(transactionKey, nil)
 		if err != nil {
-			return nil, err
+			return nil, errors.New("Transaction: " + err.Error())
 		}
 		var transaction pb.Transaction
 		err = proto.Unmarshal(data, &transaction)
@@ -272,44 +273,26 @@ func (b *Blockchain) PutData(storedValue *pb.StoredValue) error {
 		if err != nil {
 			return err
 		}
-		if !b.IsInBlockchain(hash) {
+		var transactionHash pb.TransactionHash
+		copy(transactionHash[:], hash)
+		if !b.IsInBlockchain[transactionHash] {
 			b.TemporaryBlock.Transactions = append(b.TemporaryBlock.Transactions, &transaction)
 		}
 		b.TemporaryBlock.UpdateBodyHash()
+	} else if storedValue.DataType == pb.DataType_BLOCK_BODY {
+		var body pb.BlockBody
+		err = proto.Unmarshal(storedValue.Data, &body)
+		if err != nil {
+			return err
+		}
+		for _, hash := range body.TransactionHashes {
+			var transactionHash pb.TransactionHash
+			copy(transactionHash[:], hash)
+			b.IsInBlockchain[transactionHash] = true
+		}
 	}
 
 	return nil
-}
-
-func (b *Blockchain) IsInBlockchain(transactionHash []byte) bool {
-	currentHash := b.LastBlock
-	temporaryBlock := b.TemporaryBlock
-	for {
-		var err error
-		var block *pb.Block
-		if temporaryBlock != nil {
-			block = temporaryBlock
-			temporaryBlock = nil
-		} else {
-			block, err = b.GetBlock(currentHash)
-			if err != nil {
-				log.Fatalln("invalid blockchain: ", err)
-			}
-		}
-
-		for _, haystackHash := range block.TransactionHashes {
-			if bytes.Equal(transactionHash, haystackHash) {
-				return true
-			}
-		}
-
-		// Genesis block.
-		if len(block.PreviousBlockHeaderHash) == 0 {
-			break
-		}
-		copy(currentHash[:], block.PreviousBlockHeaderHash)
-	}
-	return false
 }
 
 func GenesisBlock() *pb.Block {
@@ -330,6 +313,8 @@ func GenesisBlock() *pb.Block {
 }
 
 func (b *Blockchain) Init() {
+	b.IsInBlockchain = make(map[pb.TransactionHash]bool)
+
 	_, err := os.Stat("bitchan.leveldb")
 	firstTime := err != nil
 
@@ -337,6 +322,27 @@ func (b *Blockchain) Init() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockBodyPrefix)), nil)
+	for iter.Next() {
+		_, v := iter.Key(), iter.Value()
+		body := &pb.BlockBody{}
+		err := proto.Unmarshal(v, body)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		for _, hash := range body.TransactionHashes {
+			var transactionHash pb.TransactionHash
+			copy(transactionHash[:], hash)
+			b.IsInBlockchain[transactionHash] = true
+		}
+	}
+	iter.Release()
+	if err := iter.Error(); err != nil {
+		log.Fatalln(err)
+	}
+
 
 	if firstTime {
 		b.PutBlock(GenesisBlock())
@@ -393,7 +399,7 @@ func (b *Blockchain) UpdateLastBlock() {
 		nexts = updatedNexts
 	}
 
-	longestHeight := -1 
+	longestHeight := -1
 	for hash, height := range b.BlockHeight {
 		if height > longestHeight {
 			b.LastBlock = hash
@@ -420,12 +426,13 @@ func (b *Blockchain) NewTemporaryBlock() {
 			Timestamp:               time.Now().Unix()},
 		Transactions: []*pb.Transaction{}}
 
+	isDuplicate := make(map[pb.TransactionHash]bool)
 	if previousTemporaryBlock != nil {
 		for _, transaction := range previousTemporaryBlock.Transactions {
-			hash := transaction.Hash()
-			if !b.IsInBlockchain(hash[:]) {
+			if !b.IsInBlockchain[transaction.Hash()] && !isDuplicate[transaction.Hash()] {
 				b.TemporaryBlock.Transactions =
 					append(b.TemporaryBlock.Transactions, transaction)
+				isDuplicate[transaction.Hash()] = true
 			}
 		}
 	}
@@ -940,8 +947,9 @@ func (s *Servent) Run() {
 			log.Fatalln("invalid length ", n, " vs ", expected_len+8)
 		}
 		content := buf[8 : 8+expected_len]
-		// TODO(tetsui): verify hash
-		expected_hash = expected_hash
+		if !bytes.Equal(expected_hash, pb.Hash256(content)[0:4]) {
+			log.Fatalln("invalid message hash")
+		}
 
 		var msg pb.BitchanMessage
 		err = proto.Unmarshal(content, &msg)
@@ -1052,7 +1060,7 @@ func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) err
 	var dataLen [4]byte
 	binary.LittleEndian.PutUint32(dataLen[:], uint32(len(data)))
 	var dataHash [4]byte
-	// TODO(tetsui)
+	copy(dataHash[:], pb.Hash256(data)[0:4])
 
 	buf := []byte{}
 	buf = append(buf, dataLen[:]...)
