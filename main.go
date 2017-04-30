@@ -26,6 +26,7 @@ var gatewayPort = flag.Int("gatewayPort", 8080, "")
 var serventPort = flag.Int("serventPort", 8686, "")
 var initNodes = flag.String("initNodes", "", "")
 var dhtBucketSize = flag.Int("dhtBucketSize", 20, "Size of k-bucket in Kademlia DHT.")
+var dumpMessage = flag.Bool("dumpMessage", false, "Dump all the BitchanMessage")
 
 type BoardListItem struct {
 	Name string
@@ -487,6 +488,7 @@ func (b *Blockchain) ConstructThread(boardId string, threadHash pb.TransactionHa
 		posts = append(posts, post)
 	}
 	if len(posts) == 0 || posts[0].ThreadTitle == "" {
+		// TODO(tetsui): make it work when some are still not available
 		return nil, errors.New("invalid thread")
 	}
 
@@ -560,6 +562,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	} else if r.Method == "GET" && len(boardMatch) == 2 {
 		boardName := boardMatch[1]
 
+		for _, postHash := range blockchain.ListPostHashOfBoard(boardName) {
+			servent.Request(postHash[:])
+		}
+
 		board, err := blockchain.ConstructBoard(boardName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -582,6 +588,10 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		copy(threadHash[:], threadHashSlice)
+
+		for _, postHash := range blockchain.ListPostHashOfThread(boardName, threadHash) {
+			servent.Request(postHash[:])
+		}
 
 		thread, err := blockchain.ConstructThread(boardName, threadHash)
 		if err != nil {
@@ -753,7 +763,9 @@ func (s *Servent) Run() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		log.Println(addr.String(), "says", msg.String())
+		if *dumpMessage {
+			log.Println(addr.String(), "says", msg.String())
+		}
 		remoteAddr := fmt.Sprintf("%s:%d", addr.IP.String(), msg.OwnPort)
 
 		// FIND_NODE or FIND_VALUE requested.
@@ -828,7 +840,9 @@ func (s *Servent) Run() {
 func (s *Servent) SendBitchanMessage(address string, msg *pb.BitchanMessage) error {
 	msg.OwnPort = int32(*serventPort)
 
-	log.Println("I say", msg.String())
+	if *dumpMessage {
+		log.Println("I say", msg.String())
+	}
 
 	remoteAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
