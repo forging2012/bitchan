@@ -312,6 +312,23 @@ func (b *Blockchain) IsInBlockchain(transactionHash []byte) bool {
 	return false
 }
 
+func GenesisBlock() *pb.Block {
+	block := &pb.Block{}
+	block.UpdateBodyHash()
+
+	actualHash := block.BlockHeader.Hash()
+
+	predefinedHash, err := hex.DecodeString("4cccf46a7813de0f9ffc705f51f23aca8c7d009f")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	if !bytes.Equal(predefinedHash, actualHash[:]) {
+		log.Fatalln("cannot generate genesis block")
+	}
+	return block
+}
+
 func (b *Blockchain) Init() {
 	_, err := os.Stat("bitchan.leveldb")
 	firstTime := err != nil
@@ -322,51 +339,19 @@ func (b *Blockchain) Init() {
 	}
 
 	if firstTime {
-		/*
-			p1, t1, _ := b.CreatePost(&PostCandidate{
-				Name:        "名無しさん",
-				Mail:        "",
-				Content:     "1got",
-				ThreadHash:  pb.TransactionHash{},
-				ThreadTitle: "ほげほげスレ",
-				BoardId:     "bitchan"})
-			p2, t2, _ := b.CreatePost(&PostCandidate{
-				Name:        "名無しさん",
-				Mail:        "sage",
-				Content:     "糞スレsage",
-				ThreadHash:  t1.Hash(),
-				ThreadTitle: "",
-				BoardId:     "bitchan"})
-			p3, t3, _ := b.CreatePost(&PostCandidate{
-				Name:        "名無しさん",
-				Mail:        "",
-				Content:     "てますか？",
-				ThreadHash:  pb.TransactionHash{},
-				ThreadTitle: "はげ",
-				BoardId:     "bitchan"})
-			b.PutPost(p1)
-			b.PutPost(p2)
-			b.PutPost(p3)
-
-			block := pb.Block{}
-			block.Transactions = []*pb.Transaction{t1, t2, t3}
-			block.UpdateBodyHash()
-		*/
-
-		block := pb.Block{}
-		block.UpdateBodyHash()
-		b.PutBlock(&block)
+		b.PutBlock(GenesisBlock())
 	}
 
 	b.UpdateLastBlock()
+	b.NewTemporaryBlock()
 }
 
 func (b *Blockchain) UpdateLastBlock() {
 	previousLastBlock := b.LastBlock
 
+	forwardEdges := make(map[pb.BlockHash][]pb.BlockHash)
+
 	iter := b.DB.NewIterator(util.BytesPrefix([]byte(BlockHeaderPrefix)), nil)
-	blockHashes := []pb.BlockHash{}
-	blockRef := make(map[pb.BlockHash]bool)
 	for iter.Next() {
 		_, v := iter.Key(), iter.Value()
 		blockHeader := &pb.BlockHeader{}
@@ -374,11 +359,18 @@ func (b *Blockchain) UpdateLastBlock() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		blockHashes = append(blockHashes, blockHeader.Hash())
+
 		if len(blockHeader.PreviousBlockHeaderHash) > 0 {
-			var blockHash pb.BlockHash
-			copy(blockHash[:], blockHeader.PreviousBlockHeaderHash)
-			blockRef[blockHash] = true
+			var previousBlockHash pb.BlockHash
+			copy(previousBlockHash[:], blockHeader.PreviousBlockHeaderHash)
+
+			if _, ok := forwardEdges[previousBlockHash]; !ok {
+				forwardEdges[previousBlockHash] = []pb.BlockHash{}
+			}
+
+			forwardEdges[previousBlockHash] = append(
+				forwardEdges[previousBlockHash],
+				blockHeader.Hash())
 		}
 	}
 	iter.Release()
@@ -386,15 +378,35 @@ func (b *Blockchain) UpdateLastBlock() {
 		log.Fatalln(err)
 	}
 
-	for _, blockHash := range blockHashes {
-		if !blockRef[blockHash] {
-			b.LastBlock = blockHash
-			break
+	b.BlockHeight = make(map[pb.BlockHash]int)
+	b.BlockHeight[GenesisBlock().BlockHeader.Hash()] = 0
+	nexts := forwardEdges[GenesisBlock().BlockHeader.Hash()]
+	for i := 1; len(nexts) > 0; i++ {
+		for _, next := range nexts {
+			b.BlockHeight[next] = i
+		}
+
+		updatedNexts := []pb.BlockHash{}
+		for _, next := range nexts {
+			updatedNexts = append(updatedNexts, forwardEdges[next]...)
+		}
+		nexts = updatedNexts
+	}
+
+	longestHeight := -1 
+	for hash, height := range b.BlockHeight {
+		if height > longestHeight {
+			b.LastBlock = hash
+			longestHeight = height
 		}
 	}
 
+	// TODO(tetsui): mark orphaned blocks
+
 	if previousLastBlock != b.LastBlock {
-		log.Println("Current latest block is ", hex.EncodeToString(b.LastBlock[:]))
+		log.Println(
+			"Current block height is ", b.BlockHeight[b.LastBlock],
+			" (", hex.EncodeToString(b.LastBlock[:]), ")")
 		b.NewTemporaryBlock()
 	}
 }
@@ -417,6 +429,8 @@ func (b *Blockchain) NewTemporaryBlock() {
 			}
 		}
 	}
+
+	// TODO(tetsui): append transactions contained in orphaned blocks
 
 	b.TemporaryBlock.UpdateBodyHash()
 }
@@ -791,6 +805,9 @@ type Servent struct {
 }
 
 func (s *Servent) RunMining() {
+	if !*mining {
+		return
+	}
 	block := *blockchain.TemporaryBlock
 
 	statThreshold := 1000000
