@@ -34,11 +34,18 @@ type BoardListItem struct {
 	Id   string // Max 16 chars
 }
 
+const (
+	threadTitleLimit = 144
+	nameLimit = 192
+	mailLimit = 96
+	contentLimit = 6144
+)
+
 var boards = []BoardListItem{{Name: "ビットちゃん板", Id: "bitchan"}}
 
 // 何から進めていくか
 // - UIの整備
-//   - sageの実装、アンカー、1000で落ち、範囲限定表示、スレ落ち、文字数制限、スレサイズ制限
+//   - sageの実装、アンカー、範囲限定表示、スレ落ち、スレサイズ制限
 // - coinbaseとトランザクション
 // - データ取得部(time.Sleepしてるとこ)と全体のリファクタリング
 // - ブロックの検証
@@ -448,12 +455,40 @@ func (b *Blockchain) NewTemporaryBlock() {
 }
 
 func (b *Blockchain) CreatePost(in *PostCandidate) (post *pb.Post, transaction *pb.Transaction, err error) {
+	if len(in.ThreadTitle) > threadTitleLimit {
+		err = errors.New("thread title too long.")
+		return
+	}
+
+	if len(in.Name) > nameLimit {
+		err = errors.New("name too long.")
+		return
+	}
+	if len(in.Mail) > mailLimit {
+		err = errors.New("mail too long.")
+		return
+	}
+	if len(in.Content) > contentLimit {
+		err = errors.New("content too long.")
+		return
+	}
+
 	post = &pb.Post{
 		Name:      in.Name,
 		Mail:      in.Mail,
 		Content:   in.Content,
 		Timestamp: time.Now().Unix()}
-	if in.ThreadTitle != "" {
+	if in.ThreadTitle == "" {
+		postHashes := b.ListPostHashOfThread(in.BoardId, in.ThreadHash)
+		if len(postHashes) == 0 {
+			err = errors.New("thread does not exist.")
+			return
+		}
+		if len(postHashes) >= 1000 {
+			err = errors.New("thread exceeds 1000.")
+			return
+		}
+	} else {
 		post.ThreadTitle = in.ThreadTitle
 	}
 
